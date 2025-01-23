@@ -13,13 +13,15 @@ import datetime
 
 import cv2
 import pandas as pd
+import streamlit as st
 
 import config
 
 
 ## Streamlit utilities
 
-def st_intialize_session_state(st, video_path):
+def intialize_session_state():
+    video_path = get_video_location_from_command_line()
     if not 'io' in st.session_state:
         basename = os.path.basename(video_path)
         if basename.endswith('.mp4'):
@@ -30,17 +32,19 @@ def st_intialize_session_state(st, video_path):
             'log': f'data/{basename}.log'}
     if not 'video' in st.session_state:
         st.session_state.video = Video(video_path)
-        log(f'Loaded video at {video_path}', st)
+        log(f'Loaded video at {video_path}')
     if not 'objects' in st.session_state:
         st.session_state.objects = {
             'pool': create_object_pool(),
             'inplay': set() }
     if not 'annotations' in st.session_state:
-        load_annotations(st)
+        load_annotations()
     if not 'errors' in st.session_state:
         st.session_state.errors = []
+    if not 'messages' in st.session_state:
+        st.session_state.messages = []
 
-def st_sidebar_seek(st):
+def display_sidebar_seek_inputs():
     st.sidebar.markdown("### Seek offset in video (hh:mm:ss)")
     col1, spacer1, col2, spacer2, col3, _ = st.sidebar.columns([4,1,4,1,4,6])
     hours = col1.number_input(
@@ -53,12 +57,7 @@ def st_sidebar_seek(st):
     spacer2.write(':')
     return TimePoint(hours=hours, minutes=minutes, seconds=seconds)
 
-def st_sidebar_thumbails_input(st):
-    return st.sidebar.number_input(
-        'Number of thumbnails',
-        value=config.DEFAULT_NUMBER_OF_THUMBNAILS, min_value=0)
-
-def st_sidebar_width_slider(st):
+def display_sidebar_width_slider():
     #st.sidebar.text("Width of video")
     st.sidebar.markdown("### Width of video")
     width = st.sidebar.slider(
@@ -67,13 +66,14 @@ def st_sidebar_width_slider(st):
         label_visibility='collapsed')
     return width
 
-def display_video(video, width, seconds, st):
+def display_video(video, width, seconds):
     st.markdown(f'## {os.path.basename(video)}')
     margin = max((100 - width), 0.01)
     container, _ = st.columns([width, margin])
     container.video(video, start_time=seconds)
 
-def display_timeframe_slider(st, video):
+def display_timeframe_slider():
+    video = st.session_state.video
     return st.slider(label=create_label("Select timeframe"),
                      value=(video.start, video.end),
                      max_value=video.end,
@@ -81,7 +81,7 @@ def display_timeframe_slider(st, video):
                      format='HH:mm:ss',
                      label_visibility='visible')
 
-def display_images(timeframe: 'TimeFrame', thumbnails: int, st):
+def display_images(timeframe: 'TimeFrame'):
     video = st.session_state.video
     column_specs = []
     for tp in timeframe.left_context():
@@ -113,7 +113,7 @@ def display_images(timeframe: 'TimeFrame', thumbnails: int, st):
         else:
             cols[i].write(spec.text)
 
-def display_arguments(arguments: list, st):
+def display_arguments(arguments: list):
     arg_dict = {}
     if arguments:
         cols = st.columns(len(arguments))
@@ -128,25 +128,33 @@ def display_arguments(arguments: list, st):
                 arg_dict[arg] = args[i]
     return arg_dict
 
-def display_annotations(st):
-    st.text('Using order of creation from last to first')
+def display_annotation(annotation):
+    st.write('')
+    st.code(annotation.as_elan())
+    df = pd.DataFrame([annotation.as_row()], columns=annotation.columns())
+    st.table(df)
+    #if annotation.is_valid():
+    #    st.json(annotation.as_json())
+
+def display_annotations():
+    st.text('All annotations, using order of creation from last to first')
     rows = []
-    for a in reversed(st.session_state.annotations):
-        rows.append([a.identifier, a.start_as_string(), a.end_as_string(),
-                     a.participant, a.type, a.subtype, a.as_formula()])
-    cols = ['id', 'start', 'end', 'participant', 'type', 'subtype', 'formula']
-    df = pd.DataFrame(rows, columns=cols)
+    for annotation in reversed(st.session_state.annotations):
+        rows.append(annotation.as_row())
+    df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
     st.table(df)
 
-def display_errors(st):
+def display_errors():
     for error in st.session_state.errors:
         st.error(error)
+    st.session_state.errors = []
 
-def display_messages(messages: list, st):
-    for message in messages:
+def display_messages():
+    for message in st.session_state.messages:
         st.info(message)
+    st.session_state.messages = []
 
-def display_available_blocks(st):
+def display_available_blocks():
     st.info('**Currently available objects**')
     blocks = list(sorted(st.session_state.objects['inplay']))
     st.text('\n'.join(blocks))
@@ -155,7 +163,7 @@ def display_action_type_selector(column, key='action_type'):
     label = create_label('Select action type')
     return column.pills(label, config.ACTION_TYPES, key=key)
 
-def display_add_block_select(st, column):
+def display_add_block_select(column):
     """Displays a selectbox for selecting a block from the pool and returns what
     the selectbox returns."""
     return column.selectbox(
@@ -163,7 +171,7 @@ def display_add_block_select(st, column):
         [None] + sorted(st.session_state.objects['pool']),
         label_visibility='collapsed')
 
-def display_remove_block_select(st, column):
+def display_remove_block_select(column):
     """Displays a selectbox for removing a block from the pool and returns what
     the selectbox returns."""
     return column.selectbox(
@@ -171,29 +179,40 @@ def display_remove_block_select(st, column):
         [None] + sorted(st.session_state.objects['inplay']),
         label_visibility='collapsed')
 
+def display_remove_annotation_select():
+    return st.selectbox('Remove annotation', [None] + annotation_identifiers())
+
 
 # Actions
 
-def action_add_block(block: str, messages: list, st):
-    add_block(block, st)
+def action_add_block(block: str):
+    add_block(block)
     with open(st.session_state.io['json'], 'a') as fh:
         fh.write(json.dumps({"add-block": block}) + '\n')
-    messages.append(f'Added {block} and removed it from the pool')
+    message = f'Added {block} and removed it from the pool'
+    st.session_state.messages.append(message)
+    log(message)
 
-def action_remove_block(block: str, messages: list, st):
-    remove_block(block, st)
+def action_remove_block(block: str):
+    remove_block(block)
     with open(st.session_state.io['json'], 'a') as fh:
         fh.write(json.dumps({"remove-block": block}) + '\n')
-    messages.append(f'Removed {block} and added it back to the pool')
+    message = f'Removed {block} and added it back to the pool'
+    st.session_state.messages.append(message)
+    log(message)
 
-def add_block(block, st):
+def action_remove_annotation(annotation_id: str):
+    pass
+    log("Removed  annotation {annotation_id}")
+
+def add_block(block):
     st.session_state.objects['inplay'].add(block)
     try:
         st.session_state.objects['pool'].remove(block)
     except KeyError:
         pass
 
-def remove_block(block, st):
+def remove_block(block):
     st.session_state.objects['pool'].add(block)
     try:
         st.session_state.objects['inplay'].remove(block)
@@ -206,7 +225,7 @@ def remove_block(block, st):
 def get_video_location_from_command_line():
     return sys.argv[1] if len(sys.argv) > 1 else None
 
-def load_annotations(st):
+def load_annotations():
     filename = st.session_state.io['json']
     video_path = st.session_state.video.path
     with open(filename) as fh:
@@ -214,24 +233,29 @@ def load_annotations(st):
         annotations = []
         for raw_annotation in raw_annotations:
             if 'add-block' in raw_annotation:
-                add_block(raw_annotation['add-block'], st)
+                add_block(raw_annotation['add-block'])
             elif 'remove-block' in raw_annotation:
-                remove_block(raw_annotation['remove-block'], st)
+                remove_block(raw_annotation['remove-block'])
             else:
+                timeframe = TimeFrame(
+                    start=TimePoint(seconds=raw_annotation['start']),
+                    end=TimePoint(seconds=raw_annotation['end']))
                 annotation = ActionAnnotation(
                     video_path=video_path,
-                    start=raw_annotation['start'],
-                    end=raw_annotation['end'],
+                    timeframe=timeframe,
                     subtype=raw_annotation['action'],
                     args=raw_annotation['arguments'] )
                 annotations.append(annotation)
         st.session_state.annotations = annotations
-        log(f'Loaded annotations from {filename}', st)
+        log(f'Loaded annotations from {filename}')
+
+def annotation_identifiers():
+    return [annotation.identifier for annotation in st.session_state.annotations]
 
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')
 
-def log(text, st):
+def log(text):
     with open(st.session_state.io['log'], 'a') as fh:
         fh.write(f'{timestamp()}\t{text}\n')
 
@@ -247,7 +271,6 @@ def create_object_pool():
             for identifier in range(1, 7):
                 pool.append(f'{size}{color}Block{identifier}')
     return set(pool)
-
 
 
 class TimePoint:
@@ -431,22 +454,22 @@ class Video:
         pass
 
 
-
 class Annotation:
 
     """Annotations have types (action or gesture) and subtypes (for example, for
     actions we have put and remove). In addition, annotations are intervals so they
     have start and end offsets."""
 
-    def __init__(self, video_path: str, start: int, end: int,
+    def __init__(self, video_path: str, timeframe: TimeFrame,
                  participant: str, subtype: str, args: dict):
         # the type is filled in by the subclass initializer
         self.video_path = video_path
         self.type = None
         self.subtype = subtype
         self.participant = participant
-        self.start = start
-        self.end = end
+        self.timeframe = timeframe
+        self.start = timeframe.start.in_seconds()
+        self.end = timeframe.end.in_seconds()
         self.arguments = args
         self.errors = []
 
@@ -455,9 +478,12 @@ class Annotation:
             f'{self.identifier} {self.type}({self.start}, {self.end},' +
             f' {self.participant}, {self.as_formula()})')
 
+    @classmethod
+    def columns(cls):
+        return []
+
     def is_valid(self):
-        # the current_index is handed in by the application and it refers to what
-        # timepoint the first thumbnail points at.
+        """Checker whether the annotation is not missing any required fields."""
         self.errors = []
         # TODO: add check for out of bounds start or end
         if self.subtype is None:
@@ -500,6 +526,10 @@ class Annotation:
         offsets = f'{self.start}.0\t{self.end}.0'
         return f'ACTION\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
+    def as_row(self):
+        return [self.identifier, self.start_as_string(), self.end_as_string(),
+                self.participant, self.type, self.subtype, self.as_formula()]
+
     def start_as_string(self):
         t = TimePoint(seconds=self.start)
         return f'{t.mm()}:{t.ss()}'
@@ -508,7 +538,7 @@ class Annotation:
         t = TimePoint(seconds=self.end)
         return f'{t.mm()}:{t.ss()}'
 
-    def save(self, st):
+    def save(self):
         if self.is_valid():
             st.session_state.annotations.append(self)
             json_file = st.session_state.io['json']
@@ -518,10 +548,10 @@ class Annotation:
             with open(elan_file, 'a') as fh:
                 fh.write(self.as_elan())
             st.session_state.action_type = None
-            log(f'Saved annotation {self.identifier} {self.as_formula()}', st)
+            log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
         for error in self.errors:
-            log(error, st)
+            log(error)
 
 
 class GestureAnnotation(Annotation):
@@ -549,13 +579,19 @@ class ActionAnnotation(Annotation):
 
     identifier = 0
 
-    def __init__(self, video_path: str, start: int, end: int, subtype: str, args: list):
+    def __init__(self, video_path: str, timeframe: TimeFrame, subtype: str, args: list):
         self.identifier = self.get_identifier()
         super().__init__(
-            video_path=video_path, start=start, end=end,
+            video_path=video_path, timeframe=timeframe,
             participant='Builder', subtype=subtype, args=args)
         self.type = 'action'
+
+    @classmethod
+    def columns(cls):
+        return ['id', 'start', 'end', 'participant', 'type', 'subtype', 'formula']
 
     def get_identifier(self):
         self.__class__.identifier += 1
         return f'a{self.__class__.identifier:04d}'
+
+
