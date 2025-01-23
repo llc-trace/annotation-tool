@@ -5,6 +5,7 @@ import utils
 
 
 video = '/Users/Shared/archive/video/cpb-aacip-507-z31ng4hp5t.part.mp4'
+#video = utils.get_video_location()
 
 st.set_page_config(page_title="DPIP Gesture Annotator", layout="wide")
 
@@ -14,7 +15,7 @@ if not 'errors' in st.session_state:
     st.session_state.errors = []
 
 # Sidebar controls the timepoint in the video and the number of thumbnails
-st.sidebar.markdown('# BPIP Gesture Annotation')
+st.sidebar.markdown('# DPIP Gesture Annotation')
 seconds = st.sidebar.number_input('Time offset in seconds', key="seconds", value=0, min_value=0)
 thumbnails = st.sidebar.number_input('Number of thumbnails', key="thumbnails", value=8, min_value=0)
 st.sidebar.text(f'Number of annotations: {len(st.session_state.annotations)}')
