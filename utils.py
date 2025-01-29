@@ -9,6 +9,7 @@ TODO: somewhat random behavior when selecting offset out of bounds
 import os
 import sys
 import json
+import pathlib
 import datetime
 
 import cv2
@@ -227,6 +228,8 @@ def get_video_location_from_command_line():
 
 def load_annotations():
     filename = st.session_state.io['json']
+    if not os.path.isfile(filename):
+        pathlib.Path(filename).touch()
     video_path = st.session_state.video.path
     with open(filename) as fh:
         raw_annotations = [json.loads(line) for line in fh]
