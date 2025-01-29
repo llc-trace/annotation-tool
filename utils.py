@@ -10,6 +10,7 @@ import sys
 import json
 import time
 import datetime
+import pathlib
 
 import cv2
 import pandas as pd
@@ -129,6 +130,7 @@ def display_left_boundary(timeframe: 'TimeFrame'):
     display_frames(c1, left_context)
     display_frames(c2, first_frames)
     st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
+    time.sleep(1)
 
 def display_right_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the ending point', timeframe, timeframe.end)
@@ -141,6 +143,7 @@ def display_right_boundary(timeframe: 'TimeFrame'):
     display_frames(c1, last_frames)
     display_frames(c2, right_context)
     st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
+    time.sleep(1)
 
 def display_frames(column, frames, header=None):
     """Display frames horizontally in a box."""
@@ -280,7 +283,6 @@ def remove_annotation(annotation_id: str):
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
 
 
-
 # Various other utilities
 
 def get_video_location_from_command_line():
@@ -288,6 +290,8 @@ def get_video_location_from_command_line():
 
 def load_annotations():
     filename = st.session_state.io['json']
+    if not os.path.isfile(filename):
+        pathlib.Path(filename).touch()
     video_path = st.session_state.video.path
     with open(filename) as fh:
         raw_annotations = [json.loads(line) for line in fh]
@@ -334,7 +338,6 @@ def timepoint_from_datetime(datetime: datetime.datetime):
     ms = t.microsecond // 1000
     return TimePoint(
         hours=t.hour, minutes=t.minute, seconds=t.second, milliseconds=ms)
-
 
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')

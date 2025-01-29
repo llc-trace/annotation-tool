@@ -12,7 +12,7 @@ TODO:
     both for seek function and for left and right adjust
 - Make sure we avoid duplicate identifiers
     use utils.annotation_identifiers())
-    also note that clicknig "show elan" or "show json" the identifier
+    also note that clicking "show elan" or "show json" the identifier
     of the current annotation changes
 - Have the help page refer to the GitHub page?
 - Figure out more precise way for sources and destinations
@@ -87,8 +87,7 @@ if mode == 'add annotations':
             utils.ActionAnnotation(video.path, tf, predicate, args)
     annotation = st.session_state.annotation
 
-    # now that we have an annotation we can update the contents given the inputs
-    #annotation.timeframe.start = start_point
+    # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
     annotation
@@ -100,9 +99,10 @@ if mode == 'add annotations':
     utils.display_errors()
 
     if show['boundary']:
-        # this is to make "Assertion fctx->async_lock" errors less likely,
+        # This is to make "Assertion fctx->async_lock" errors less likely,
         # much easier to do than the real fix which appears to be having
-        # to do with threads
+        # to do with threads. Two more of these were added to the utilities
+        # when the problem came back due to added frames.
         time.sleep(1)
 
     #st.write(st.session_state)
