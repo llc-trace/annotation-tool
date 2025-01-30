@@ -40,10 +40,19 @@ def intialize_session_state():
             'inplay': set() }
     if not 'annotations' in st.session_state:
         load_annotations()
+    if not 'windows' in st.session_state:
+        st.session_state.windows = WindowCache()
     if not 'errors' in st.session_state:
         st.session_state.errors = []
     if not 'messages' in st.session_state:
         st.session_state.messages = []
+
+def session_options():
+    options = {}
+    for var in st.session_state:
+        if var.startswith('opt_'):
+            options[var] = st.session_state[var]
+    return options
 
 def sidebar_display_info():
     text = (
@@ -56,6 +65,7 @@ def sidebar_display_tool_mode():
     return st.sidebar.radio(
         "Tool mode",
         ['add annotations', 'show annotations', 'show blocks', 'help'],
+        key='opt_mode',
         label_visibility='collapsed')
 
 def sidebar_display_video_controls():
@@ -78,16 +88,19 @@ def sidebar_display_seek_inputs():
 def sidebar_display_width_slider():
     return st.sidebar.slider(
         label=create_label("Width", size='small'),
+        key='opt_video_width',
         min_value=25, max_value=100,
         value=config.DEFAULT_VIDEO_WIDTH, format="%d%%")
 
 def sidebar_display_annotation_controls():
     st.sidebar.header('Annotation controls', divider=True)
-    show_boundary = st.sidebar.checkbox('Show boundary')
-    show_elan = st.sidebar.checkbox('Show ELAN')
-    show_json = st.sidebar.checkbox('Show JSON')
+    tune_start = st.sidebar.checkbox('Fine-tune start point', key='opt_tune_start')
+    tune_end = st.sidebar.checkbox('Fine-tune end point', key='opt_tune_end')
+    show_elan = st.sidebar.checkbox('Show ELAN', key='opt_show_elan')
+    show_json = st.sidebar.checkbox('Show JSON',  key='opt_show_json')
     return {
-        'boundary': show_boundary,
+        'tune-start': tune_start,
+        'tune-end': tune_end,
         'elan': show_elan,
         'json': show_json }
 
@@ -100,9 +113,11 @@ def display_video(video: 'Video', width, seconds):
 def display_timeframe_slider():
     video = st.session_state.video
     return st.slider(label=create_label("Select timeframe"),
+                     key='opt_timeframe',
                      value=(video.start, video.end),
                      max_value=video.end,
                      step=datetime.timedelta(seconds=1),
+                     on_change=action_change_timeframe,
                      format=config.SLIDER_TIME_FORMAT)
 
 def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
@@ -111,39 +126,77 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     step = datetime.timedelta(milliseconds=100)
     margin = datetime.timedelta(seconds=config.FINE_TUNING_WINDOW)
     d = datetime.datetime(2020, 1, 1, tp.hours, tp.minutes, tp.seconds)
-    left_context = tf.slice_to_left(tp.in_milliseconds(), n=4, step=1000)
-    first_frames = tf.slice_to_right(tp.in_milliseconds(), n=5, step=1000)
-    header = 'Window of nine frames around the selected start point or end point'
-    display_frames(st, left_context + first_frames, header=header)
-    return st.slider(label, d - margin, d + margin,
-                     value=d, format=config.SLIDER_TIME_FORMAT, step=step,
-                     label_visibility='collapsed')
+    if False:
+        # for now we are not showing those other timeframes
+        left_context = tf.slice_to_left(tp.in_milliseconds(), n=4, step=1000)
+        first_frames = tf.slice_to_right(tp.in_milliseconds(), n=5, step=1000)
+        header = 'Window of nine frames around the selected start point or end point'
+        display_frames(st, left_context + first_frames, header=header)
+    box = st.container(border=True)
+    return box.slider(
+        create_label(label), d - margin, d + margin,
+        value=d, format=config.SLIDER_TIME_FORMAT, step=step)
+
+
+class WindowCache:
+
+    def __init__(self):
+        self.data = {}
+
+    def __len__(self):
+        return len(self.data)
+
+    def __str__(self):
+        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
+        return f'<WindowCache with {len(self)} timepoints  {points}>'
+
+    def __getitem__(self, i):
+        return self.data[i]
+
+    def __setitem__(self, i, val):
+        self.data[i] = val
+
 
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
     timepoint = timepoint_from_datetime(date)
     step = 100
-    timeframe.start = timepoint
-    left_context = timeframe.left_context(n=config.CONTEXT_SIZE, step=step)
-    first_frames = timeframe.first_frames(n=config.CONTEXT_SIZE, step=step)
-    c1, c2 = st.columns(2)
-    display_frames(c1, left_context)
-    display_frames(c2, first_frames)
+    ms = timeframe.start.in_milliseconds()
+    add_frames_to_cache(timeframe, ms, step)
+    display_sliding_window(st, st.session_state.windows[ms], timepoint)
     st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
-    time.sleep(1)
 
 def display_right_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the ending point', timeframe, timeframe.end)
     timepoint = timepoint_from_datetime(date)
     step = 100
-    timeframe.end = timepoint
-    last_frames = timeframe.last_frames(n=config.CONTEXT_SIZE, step=step)
-    right_context = timeframe.right_context(n=config.CONTEXT_SIZE, step=step)
-    c1, c2 = st.columns(2)
-    display_frames(c1, last_frames)
-    display_frames(c2, right_context)
-    st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
-    time.sleep(1)
+    ms = timeframe.end.in_milliseconds()
+    add_frames_to_cache(timeframe, ms, step)
+    display_sliding_window(st, st.session_state.windows[ms], timepoint)
+    st.button("Save ending time", on_click=action_save_ending_time, args=[timepoint])
+
+def add_frames_to_cache(timeframe, ms, step):
+    """Makes sure that the frames needed are in the cache."""
+    if ms not in st.session_state.windows.data:
+        window = timeframe.get_window(ms, n=config.CONTEXT_SIZE, step=step)
+        log(f'Cached frame window at {ms}')
+        st.session_state.windows[ms] = window
+        # TODO. This is to make "Assertion fctx->async_lock" errors less likely,
+        # this is much easier to do than the real fix which seems to require 
+        # dealing with threads.
+        time.sleep(1)
+
+def display_sliding_window(column, frames, tp, header=None):
+    """Display frames horizontally in a box."""
+    box = column.container(border=True)
+    if header is not None:
+        box.write(header)
+    cols = box.columns(len(frames))
+    for i, frame in enumerate(frames):
+        is_focus = False
+        if tp.in_milliseconds() == frame.timepoint.in_milliseconds():
+            is_focus = True
+        display_frame(cols[i], frame, focus=is_focus)
 
 def display_frames(column, frames, header=None):
     """Display frames horizontally in a box."""
@@ -154,8 +207,9 @@ def display_frames(column, frames, header=None):
     for i, frame in enumerate(frames):
         display_frame(cols[i], frame)
 
-def display_frame(column, frame):
-    column.image(frame.image, channels="BGR", caption=frame.caption())
+def display_frame(column, frame, focus=False):
+    caption = f'✔︎' if focus else frame.caption()
+    column.image(frame.image, channels="BGR", caption=caption)
     
 def display_arguments(arguments: list):
     arg_dict = {}
@@ -235,6 +289,11 @@ def display_remove_annotation_select():
 
 # Actions
 
+def action_change_timeframe():
+    t1, t2 = st.session_state.opt_timeframe
+    st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
+    st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
+
 def action_add_block(block: str):
     add_block(block)
     with open(st.session_state.io['json'], 'a') as fh:
@@ -262,7 +321,13 @@ def action_remove_annotation(annotation_id: str):
 
 def action_save_starting_time(timepoint: 'TimePoint'):
     st.session_state.annotation.timeframe.start = timepoint
+    st.session_state.opt_tune_start = False
     log(f'Saved starting time {timepoint}')
+
+def action_save_ending_time(timepoint: 'TimePoint'):
+    st.session_state.annotation.timeframe.end = timepoint
+    st.session_state.opt_tune_end = False
+    log(f'Saved ending time {timepoint}')
 
 def add_block(block):
     st.session_state.objects['inplay'].add(block)
@@ -339,6 +404,11 @@ def timepoint_from_datetime(datetime: datetime.datetime):
     return TimePoint(
         hours=t.hour, minutes=t.minute, seconds=t.second, milliseconds=ms)
 
+def timepoint_from_time(t: datetime.time):
+    ms = t.microsecond // 1000
+    return TimePoint(
+        hours=t.hour, minutes=t.minute, seconds=t.second, milliseconds=ms)
+
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')
 
@@ -394,8 +464,11 @@ class TimePoint:
     def mmm(self):
         return f'{self.milliseconds:03d}'
 
-    def timestamp(self):
-        return f'{self.hh()}:{self.mm()}:{self.ss()}.{self.mmm()}'
+    def timestamp(self, short=False):
+        if short:
+            return f'{self.mm()}:{self.ss()}.{self.mmm()}'
+        else:
+            return f'{self.hh()}:{self.mm()}:{self.ss()}.{self.mmm()}'
 
     def normalize(self):
         """Normalize values so that millisseconds < 1000, and seconds and minutes
@@ -484,6 +557,15 @@ class TimeFrame:
             frames.append(Frame(self.video, milliseconds + ms))
         return frames
 
+    def get_window(self, milliseconds: int, n=4, step=100):
+        frames = []
+        for ms in range(n * -step, 0, step):
+            frames.append(Frame(self.video, milliseconds + ms))
+        frames.append(Frame(self.video, milliseconds))
+        for ms in range(0, n * step, step):
+            frames.append(Frame(self.video, milliseconds + ms + step))
+        return frames
+        
 
 class Video:
 
@@ -545,8 +627,8 @@ class Frame:
         timestamp = self.timepoint.timestamp()
         return f'<{self.__class__.__name__} t={timestamp} image={self.success}>'
 
-    def caption(self):
-        return self.timepoint.timestamp()
+    def caption(self, short=True):
+        return self.timepoint.timestamp(short=short)
 
 
 class Annotation:
@@ -649,6 +731,7 @@ class Annotation:
             st.session_state.action_type = None
             log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
+        st.session_state.opt_show_boundary = False
         for error in self.errors:
             log(error)
 

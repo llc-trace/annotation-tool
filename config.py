@@ -12,11 +12,11 @@ DEFAULT_IMAGE_WIDTH = 100	# image width in pixels
 
 # Number of frames printed from the context. Theonly numbers that make sense
 # here are from 3 to probably 6
-CONTEXT_SIZE = 4
+CONTEXT_SIZE = 5
 
 # This determines how many seconds to the left and right the fine-tuning slider
 # includes.
-FINE_TUNING_WINDOW = 2
+FINE_TUNING_WINDOW = 0.5
 
 # The format used for the timepoints of the slider, other useful formats are
 # 'HH:mm:ss' (if you have a longer video), 'mm:ss.SSS' (if you want to show
@@ -40,7 +40,7 @@ GESTURE_TYPES = {
 	'PUSH-RIGHT': []}
 
 # Relations taken from the propositions document, first the name used here then the
-# name used in the document. All negations are ignored, the tool can use an extra 
+# name used in the document. All negations are ignored, the tool can use an extra
 # marker for that if needed.
 POSITIONAL_RELATIONS = {
 	'on': 'is on',

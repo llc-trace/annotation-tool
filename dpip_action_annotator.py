@@ -35,6 +35,8 @@ import config
 import utils
 
 
+DEBUG = False
+
 st.set_page_config(page_title="DPIP Action Annotator", layout="wide")
 
 utils.intialize_session_state()
@@ -54,6 +56,9 @@ if True or 'annotation' in mode:
 if True or mode == 'add annotations':
     show = utils.sidebar_display_annotation_controls()
 
+if DEBUG:
+    st.write(utils.session_options())
+
 
 ## MAIN CONTENT
 
@@ -67,15 +72,13 @@ if mode == 'add annotations':
         t1, t2 = utils.display_timeframe_slider()
     tf = utils.create_timeframe_from_slider_inputs(t1, t2)
 
-    if show['boundary']:
+    if show['tune-start']:
         with st.container(border=True):
-            choice = st.pills(
-                utils.create_label('Fine-tune boundaries'),
-                ['adjust start point', 'adjust end point'], default='adjust start point')
-            if choice == 'adjust start point':
-                start_point = utils.display_left_boundary(tf)
-            if choice == 'adjust end point':
-                utils.display_right_boundary(tf)
+            start_point = utils.display_left_boundary(tf)
+
+    if show['tune-end']:
+        with st.container(border=True):
+            end_point = utils.display_right_boundary(tf)
 
     with st.container(border=True):
         predicate = utils.display_action_type_selector(st)
@@ -90,22 +93,12 @@ if mode == 'add annotations':
     # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
-    annotation
     
     with st.container(border=True):
         utils.display_annotation(annotation, show)
         st.button("Add", on_click=annotation.save)
 
     utils.display_errors()
-
-    if show['boundary']:
-        # This is to make "Assertion fctx->async_lock" errors less likely,
-        # much easier to do than the real fix which appears to be having
-        # to do with threads. Two more of these were added to the utilities
-        # when the problem came back due to added frames.
-        time.sleep(1)
-
-    #st.write(st.session_state)
 
 
 if mode == 'show annotations':
