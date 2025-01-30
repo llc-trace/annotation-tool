@@ -2,7 +2,7 @@
 
 Tool for annotating actions and gestures.
 
-To run this install Streamlit and OpenCV
+To run this install Streamlit and OpenCV, ideally in a fresh virtual environment:
 
 ```shell
 pip install streamlit
