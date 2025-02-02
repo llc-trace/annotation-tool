@@ -1,27 +1,14 @@
 """
 
-TODO:
-- Use second tier for actions if there is overlap
-- Make sure that identifiers are unique
-    now all is reset to 0 when restarting the tool
-- Add reload and purge buttons on the show-annotations page?
-✔︎ Update code to show images around boundaries
-- Add more log messages
+
+TODO (OTHER):
 - deal with seconds/milliseconds < 0 after adjustement
+    (this may now be obsolete)
 - deal with out of bounds errors 
     both for seek function and for left and right adjust
-- Make sure we avoid duplicate identifiers
-    use utils.annotation_identifiers())
-    also note that clicking "show elan" or "show json" the identifier
-    of the current annotation changes
-- Have the help page refer to the GitHub page?
-- Figure out more precise way for sources and destinations
-    use the propositions list for this
 - Often when removing an annotation and doing it again the
     tool skips to "add annotations" mode
 - Check whether using the data_editor widget makes sense
-- Add a cache to the session state, it could contain all images that have
-    so far been extracted
 
 """
 
@@ -51,10 +38,12 @@ video =  st.session_state.video
 st.sidebar.title('DPIP Action Annotation')
 utils.sidebar_display_info()
 mode = utils.sidebar_display_tool_mode()
-if True or 'annotation' in mode:
+if 'annotation' in mode:
     offset, width = utils.sidebar_display_video_controls()
-if True or mode == 'add annotations':
+if mode == 'add annotations':
     show = utils.sidebar_display_annotation_controls()
+if mode == 'dev':
+    dev = utils.sidebar_display_dev_controls()
 
 if DEBUG:
     st.write(utils.session_options())
@@ -86,8 +75,9 @@ if mode == 'add annotations':
         args = utils.display_arguments(action_args)
 
     if 'annotation' not in st.session_state:
-        st.session_state.annotation = \
-            utils.ActionAnnotation(video.path, tf, predicate, args)
+        st.session_state.annotation = utils.ActionAnnotation()
+        #st.session_state.annotation = utils.ActionAnnotation(
+        #    video_path=video.path, timeframe=tf, predicate=predicate, arguments=args)
     annotation = st.session_state.annotation
 
     # Now that we have an annotation we can update the contents given the inputs
@@ -133,3 +123,14 @@ if mode == 'help':
 
     with open('manual.md') as fh:
         st.markdown(fh.read())
+
+
+if mode == 'dev':
+
+    if dev['session_state']:
+        with st.container(border=True):
+            st.write(st.session_state)
+    if dev['log']:
+        with open(st.session_state.io['log']) as fh:
+            with st.container(border=True):
+                st.code(fh.read(), language=None)

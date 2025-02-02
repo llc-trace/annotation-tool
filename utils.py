@@ -12,6 +12,7 @@ import time
 import pathlib
 import datetime
 import pathlib
+from copy import deepcopy
 
 import cv2
 import pandas as pd
@@ -21,6 +22,7 @@ import config
 
 
 ## Streamlit utilities
+## ----------------------------------------------------------------------------
 
 def intialize_session_state():
     video_path = get_video_location_from_command_line()
@@ -65,7 +67,7 @@ def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
     return st.sidebar.radio(
         "Tool mode",
-        ['add annotations', 'show annotations', 'show blocks', 'help'],
+        ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
         key='opt_mode',
         label_visibility='collapsed')
 
@@ -105,6 +107,15 @@ def sidebar_display_annotation_controls():
         'elan': show_elan,
         'json': show_json }
 
+def sidebar_display_dev_controls():
+    st.sidebar.header('Developer goodies', divider=True)
+    dev_session = st.sidebar.checkbox('Show session_state', value=False)
+    dev_log = st.sidebar.checkbox('Show log', value=False)
+    return {
+        'session_state': dev_session,
+        'log': dev_log,
+        }
+
 def display_video(video: 'Video', width, seconds):
     st.info(video.filename)
     margin = max((100 - width), 0.01)
@@ -137,26 +148,6 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     return box.slider(
         create_label(label), d - margin, d + margin,
         value=d, format=config.SLIDER_TIME_FORMAT, step=step)
-
-
-class WindowCache:
-
-    def __init__(self):
-        self.data = {}
-
-    def __len__(self):
-        return len(self.data)
-
-    def __str__(self):
-        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
-        return f'<WindowCache with {len(self)} timepoints  {points}>'
-
-    def __getitem__(self, i):
-        return self.data[i]
-
-    def __setitem__(self, i, val):
-        self.data[i] = val
-
 
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
@@ -288,10 +279,14 @@ def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
 
 
-# Actions
+## Actions
+## ----------------------------------------------------------------------------
 
 def action_change_timeframe():
     t1, t2 = st.session_state.opt_timeframe
+    st.write(st.session_state.annotation.timeframe)
+    if st.session_state.annotation.timeframe is None:
+        st.session_state.annotation.timeframe = TimeFrame()
     st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
     st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
 
@@ -349,7 +344,8 @@ def remove_annotation(annotation_id: str):
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
 
 
-# Various other utilities
+## Various other utilities
+## ----------------------------------------------------------------------------
 
 def get_video_location_from_command_line():
     return sys.argv[1] if len(sys.argv) > 1 else None
@@ -375,10 +371,11 @@ def load_annotations():
                     start=TimePoint(milliseconds=raw_annotation['start']),
                     end=TimePoint(milliseconds=raw_annotation['end']))
                 annotation = ActionAnnotation(
+                    identifier=raw_annotation['identifier'],
                     video_path=video_path,
                     timeframe=timeframe,
                     predicate=raw_annotation['action'],
-                    args=raw_annotation['arguments'] )
+                    arguments=raw_annotation['arguments'] )
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -431,6 +428,25 @@ def create_object_pool():
     return set(pool)
 
 
+class WindowCache:
+
+    def __init__(self):
+        self.data = {}
+
+    def __len__(self):
+        return len(self.data)
+
+    def __str__(self):
+        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
+        return f'<WindowCache with {len(self)} timepoints  {points}>'
+
+    def __getitem__(self, i):
+        return self.data[i]
+
+    def __setitem__(self, i, val):
+        self.data[i] = val
+
+
 class TimePoint:
 
     """Utility class to deal with time points, where a time point refers to an offset
@@ -449,6 +465,11 @@ class TimePoint:
 
     def __str__(self):
         return f'<{self.__class__.__name__} {self.timestamp()}>'
+
+    def copy(self):
+        return TimePoint(
+            hours=self.hours, minutes=self.minutes,
+            seconds=self.seconds, milliseconds=self.milliseconds)
 
     def hh(self):
         """Return number of hours as a string."""
@@ -508,7 +529,7 @@ class TimePoint:
 
 class TimeFrame:
 
-    def __init__(self, start: TimePoint, end: TimePoint, video=None):
+    def __init__(self, start: TimePoint = None, end: TimePoint = None, video=None):
         self.start = start
         self.end = end
         self.video = video
@@ -517,7 +538,14 @@ class TimeFrame:
         return f'{self.start} ==> {self.end}  [length={len(self)}]'
 
     def __len__(self):
-        return self.end.in_seconds() - self.start.in_seconds()
+        if self.start is not None and self.end is not None:
+            return self.end.in_seconds() - self.start.in_seconds()
+        else:
+            return 0
+
+    def copy(self):
+        return TimeFrame(
+            start=self.start.copy(), end=self.end.copy(), video=self.video)
 
     def adjust_start(self, milliseconds: int):
         """Adjust the start point, using milliseconds."""
@@ -638,13 +666,15 @@ class Annotation:
     actions we have put and remove). In addition, annotations are intervals so they
     have start and end offsets."""
 
-    def __init__(self, video_path: str, timeframe: TimeFrame,
-                 participant: str, predicate: str, args: dict):
+    def __init__(self, identifier : str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, participant: str = None,
+                 predicate: str = None, arguments: dict = {}):
+        self.identifier = identifier
         self.video_path = video_path
-        self.timeframe = timeframe
+        self.timeframe = TimeFrame() if timeframe is None else timeframe
         self.participant = participant
         self.predicate = predicate
-        self.arguments = args
+        self.arguments = arguments
         self.errors = []
 
     def __str__(self):
@@ -658,25 +688,34 @@ class Annotation:
 
     @property
     def start(self):
+        if self.timeframe is None or self.timeframe.start is None:
+            return None
         return self.timeframe.start.in_milliseconds()
 
     @property
     def end(self):
+        if self.timeframe is None or self.timeframe.end is None:
+            return None
         return self.timeframe.end.in_milliseconds()
     
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
         # TODO: add check for out of bounds start or end
+        if self.start is None:
+            self.errors.append(f'WARNING: start position is not specified')
+        if self.end is None:
+            self.errors.append(f'WARNING: end position is not specified')
         if self.predicate is None:
             self.errors.append(f'WARNING: {self.annotation_type()} type is not specified')
         for arg_name, arg_value in self.arguments.items():
             if not arg_value:
                 self.errors.append(
                     f'WARNING: required argument "{arg_name}" is not specified')
-        if self.start > self.end:
-            self.errors.append(
-                'WARNING: the start of the interval cannot be before the end')
+        if self.start is not None and self.end is not None:
+            if self.start > self.end:
+                self.errors.append(
+                    'WARNING: the start of the interval cannot be before the end')
         return True if not self.errors else False
 
     def elan_identifier(self):
@@ -713,16 +752,32 @@ class Annotation:
                 self.participant, self.predicate, self.as_formula()]
 
     def start_as_string(self):
-        t = TimePoint(milliseconds=self.start)
-        return f'{t.mm()}:{t.ss()}.{t.mmm()}'
+        return self.point_as_string(self.start)
 
     def end_as_string(self):
-        t = TimePoint(milliseconds=self.end)
+        return self.point_as_string(self.end)
+
+    def point_as_string(self, ms: int):
+        # TODO: this should not be an instance method here
+        if ms is None:
+            return 'None'
+        t = TimePoint(milliseconds=ms)
         return f'{t.mm()}:{t.ss()}.{t.mmm()}'
+
+    def copy(self):
+        return Annotation(
+            identifier=self.identifier,
+            video_path=self.video_path,
+            participant=self.participant,
+            predicate=self.predicate,
+            timeframe=self.timeframe.copy(),
+            arguments=deepcopy(self.arguments))
 
     def save(self):
         if self.is_valid():
-            st.session_state.annotations.append(self)
+            self.assign_identifier()
+            #print(self)
+            st.session_state.annotations.append(self.copy())
             json_file = st.session_state.io['json']
             elan_file = st.session_state.io['elan']
             with open(json_file, 'a') as fh:
@@ -733,6 +788,7 @@ class Annotation:
             log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
         st.session_state.opt_show_boundary = False
+        st.session_state.annotation = ActionAnnotation()
         for error in self.errors:
             log(error)
 
@@ -742,11 +798,11 @@ class GestureAnnotation(Annotation):
     identifier = 0
 
     def __init__(self, video_path: str, start: int, end: int,
-                 participant: str, subtype: str, args: list):
+                 participant: str, subtype: str, arguments: list):
         self.identifier = self.get_identifier()
         super().__init__(
             video_path=video_path, start=start, end=end,
-            participant=participant, subtype=subtype, args=args)
+            participant=participant, subtype=subtype, arguments=arguments)
 
     @staticmethod
     def annotation_type():
@@ -763,13 +819,14 @@ class ActionAnnotation(Annotation):
     # identifier when we add the annotation (after testing for validity), or
     # else go back to using an identifier created from a timestamp.
 
-    identifier = 0
+    identifier = 1
 
-    def __init__(self, video_path: str, timeframe: TimeFrame, predicate: str, args: list):
-        self.identifier = self.get_identifier()
+    def __init__(self, identifier: str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, predicate: str = None,
+                 arguments: list = []):
         super().__init__(
-            video_path=video_path, timeframe=timeframe,
-            participant='Builder', predicate=predicate, args=args)
+            identifier=identifier, video_path=video_path, timeframe=timeframe,
+            participant='Builder', predicate=predicate, arguments=arguments)
 
     @classmethod
     def columns(cls):
@@ -779,8 +836,11 @@ class ActionAnnotation(Annotation):
     def annotation_type():
         return 'Action'
 
-    def get_identifier(self):
-        self.__class__.identifier += 1
-        return f'a{self.__class__.identifier:04d}'
+    def assign_identifier(self):
+        max_identifier = 0
+        for annotation in st.session_state.annotations:
+            max_identifier = max(max_identifier, int(annotation.identifier[1:]))
+            print(annotation.identifier)
+        self.identifier = f'a{max_identifier+1:04d}'
 
 
