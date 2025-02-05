@@ -1,14 +1,11 @@
 """
 
+DPIP Action Annotator
 
-TODO (OTHER):
-- deal with seconds/milliseconds < 0 after adjustement
-    (this may now be obsolete)
-- deal with out of bounds errors 
-    both for seek function and for left and right adjust
-- Often when removing an annotation and doing it again the
-    tool skips to "add annotations" mode
-- Check whether using the data_editor widget makes sense
+To run this:
+
+$ pip install -r requirements.txt
+$ streamlit run dpip_action_annotator.py <VIDEO_FILE>
 
 """
 
@@ -22,6 +19,7 @@ import config
 import utils
 
 
+DEBUG = True
 DEBUG = False
 
 st.set_page_config(page_title="DPIP Action Annotator", layout="wide")
@@ -48,8 +46,35 @@ if mode == 'dev':
 if DEBUG:
     st.write(utils.session_options())
 
+# This is done here and not in utils.intialize_session_state() because
+# the kind of annotation differens for actions and gestures.
+if 'annotation' not in st.session_state:
+    st.session_state.annotation = utils.ActionAnnotation()
+
 
 ## MAIN CONTENT
+
+
+def current_timeframes():
+    """Returns all timeframes of all the current annotations."""
+    return [annotation.timeframe for annotation in st.session_state.annotations]
+
+def calculate_tier(tf: utils.TimeFrame):
+    taken = current_timeframes()
+    #for tf in taken: st.write(tf)
+    for taken_tf in taken:
+        #print('   ', taken_tf, overlap(tf, taken_tf))
+        if overlap(tf, taken_tf):
+            return 'ACTION2'
+    return 'ACTION1'
+
+def overlap(tf1, tf2):
+    if tf1.end <= tf2.start:
+        return False
+    if tf2.end <= tf1.start:
+        return False
+    return True
+
 
 if mode == 'add annotations':
 
@@ -61,6 +86,9 @@ if mode == 'add annotations':
         t1, t2 = utils.display_timeframe_slider()
     tf = utils.create_timeframe_from_slider_inputs(t1, t2)
 
+    #t1, t2, st.session_state.opt_timeframe
+    #st.session_state.annotation
+
     if show['tune-start']:
         with st.container(border=True):
             start_point = utils.display_left_boundary(tf)
@@ -70,20 +98,21 @@ if mode == 'add annotations':
             end_point = utils.display_right_boundary(tf)
 
     with st.container(border=True):
+        #tier = st.selectbox(utils.create_label('Tier'), ('action-1', 'action-2'))
         predicate = utils.display_action_type_selector(st)
         action_args = config.ACTION_TYPES.get(predicate, [])
         args = utils.display_arguments(action_args)
 
-    if 'annotation' not in st.session_state:
-        st.session_state.annotation = utils.ActionAnnotation()
-        #st.session_state.annotation = utils.ActionAnnotation(
-        #    video_path=video.path, timeframe=tf, predicate=predicate, arguments=args)
     annotation = st.session_state.annotation
-
+    
     # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
+    annotation.tier = calculate_tier(tf)
     
+    if DEBUG:
+        st.code(annotation.as_pretty_string(), language=None)
+
     with st.container(border=True):
         utils.display_annotation(annotation, show)
         st.button("Add", on_click=annotation.save)
