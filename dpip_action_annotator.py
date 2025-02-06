@@ -55,27 +55,6 @@ if 'annotation' not in st.session_state:
 ## MAIN CONTENT
 
 
-def current_timeframes():
-    """Returns all timeframes of all the current annotations."""
-    return [annotation.timeframe for annotation in st.session_state.annotations]
-
-def calculate_tier(tf: utils.TimeFrame):
-    taken = current_timeframes()
-    #for tf in taken: st.write(tf)
-    for taken_tf in taken:
-        #print('   ', taken_tf, overlap(tf, taken_tf))
-        if overlap(tf, taken_tf):
-            return 'ACTION2'
-    return 'ACTION1'
-
-def overlap(tf1, tf2):
-    if tf1.end <= tf2.start:
-        return False
-    if tf2.end <= tf1.start:
-        return False
-    return True
-
-
 if mode == 'add annotations':
 
     st.title('Add annotations')
@@ -85,9 +64,6 @@ if mode == 'add annotations':
     with st.container(border=True):
         t1, t2 = utils.display_timeframe_slider()
     tf = utils.create_timeframe_from_slider_inputs(t1, t2)
-
-    #t1, t2, st.session_state.opt_timeframe
-    #st.session_state.annotation
 
     if show['tune-start']:
         with st.container(border=True):
@@ -102,18 +78,20 @@ if mode == 'add annotations':
         predicate = utils.display_action_type_selector(st)
         action_args = config.ACTION_TYPES.get(predicate, [])
         args = utils.display_arguments(action_args)
-
+        args = utils.process_arguments(args)
+    
     annotation = st.session_state.annotation
     
     # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
-    annotation.tier = calculate_tier(tf)
+    annotation.tier = utils.calculate_tier(tf)
     
     if DEBUG:
         st.code(annotation.as_pretty_string(), language=None)
 
     with st.container(border=True):
+        #st.markdown(annotation.as_markdown())
         utils.display_annotation(annotation, show)
         st.button("Add", on_click=annotation.save)
 

@@ -207,7 +207,7 @@ def display_frame(column, frame, focus=False):
     caption = f'✔︎' if focus else frame.caption()
     column.image(frame.image, channels="BGR", caption=caption)
     
-def display_arguments(arguments: list):
+def OLDdisplay_arguments(arguments: list):
     arg_dict = {}
     if arguments:
         cols = st.columns(len(arguments))
@@ -221,6 +221,55 @@ def display_arguments(arguments: list):
                     args[i] = st.text_input(arg)
                 arg_dict[arg] = args[i]
     return arg_dict
+
+def display_arguments(arguments: list):
+    arg_dict = {}
+    if arguments:
+        cols = st.columns(len(arguments))
+        args = [''] * len(arguments)
+        blocks = list(sorted(st.session_state.objects['inplay']))
+        locations = config.ABSOLUTE_LOCATIONS
+        relations = list(config.POSITIONAL_RELATIONS.keys())
+        for i, arg in enumerate(arguments):
+            st.write(config.ARGUMENT_MAPPINGS.get(arg, arg))
+            if arg == 'Object':
+                args[i] = st.selectbox(arg, [None] + blocks, label_visibility='collapsed')
+            elif arg in config.LOCATION_TYPES:
+                args[i] = location_picker(arg, blocks, locations, relations)
+            else:
+                args[i] = st.text_input(arg)
+            arg_dict[arg] = args[i]
+    return arg_dict
+
+def location_picker(arg, blocks, locations, relations):
+    def box(label, options, key):
+        return st.selectbox(label, options, key=key, label_visibility='collapsed')
+    def text(label, key):
+        return st.text_input(label, key=key, label_visibility='collapsed')
+    loc_selections = [None] + blocks + locations
+    rel_selections = [None] + relations
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        rel = box(f'rel-{arg}', rel_selections, key=f'rel-{arg}')
+    with c2:
+        loc = box(f'loc-{arg}', loc_selections, key=f'loc-{arg}')
+    with c3:
+        txt = text(f'free-{arg}', key=f'free-{arg}')
+    return {'rel': rel, 'loc': loc, 'txt': txt}
+
+def process_arguments(args):
+    processed_args = {}
+    for arg, val in args.items():
+        if isinstance(val, dict):
+            if val.get('rel') and val.get('loc'):
+                processed_args[arg] = f'{val["rel"]}({val["loc"]})'
+            elif val['txt']:
+                processed_args[arg] = val['txt']
+            else:
+                processed_args[arg] = None
+        elif isinstance(val, str) or val is None:
+            processed_args[arg] = val
+    return processed_args
 
 def display_annotation(annotation, show_options: dict):
     st.info('Current annotation')
@@ -430,6 +479,31 @@ def create_object_pool():
             for identifier in range(1, 7):
                 pool.append(f'{size}{color}Block{identifier}')
     return set(pool)
+
+def current_timeframes():
+    """Returns all timeframes of all the current annotations."""
+    return [annotation.timeframe for annotation in st.session_state.annotations]
+
+def calculate_tier(tf: 'TimeFrame'):
+    """Calculate the tier for an annotation based on overlap. This is   only relevant
+    for action annotations and assumes there are only two tiers."""
+    # TODO: this seems a bit haphazard
+    taken = current_timeframes()
+    #for tf in taken: st.write(tf)
+    for taken_tf in taken:
+        #print('   ', taken_tf, overlap(tf, taken_tf))
+        if overlap(tf, taken_tf):
+            return 'ACTION2'
+    return 'ACTION1'
+
+def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
+    """Return True if two time frames overlap, False otherwise."""
+    # TODO: mayhap put this on the TimeFrame class
+    if tf1.end <= tf2.start:
+        return False
+    if tf2.end <= tf1.start:
+        return False
+    return True
 
 
 class WindowCache:
@@ -770,13 +844,22 @@ class Annotation:
         }
 
     def as_elan(self):
-        offsets = f'{self.start/1000:.3f}\t{self.end/1000:.3f}.0'
+        start = f'{self.start/1000:.3f}' if self.start else 'None'
+        end = f'{self.end/1000:.3f}' if self.end else 'None'
+        #offsets = f'{self.start/1000:.3f}\t{self.end/1000:.3f}'
+        offsets = f'{start}\t{end}'
         return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
         return [self.identifier, self.name, self.tier,
                 self.start_as_string(), self.end_as_string(),
-                self.participant, self.predicate, self.as_formula()]
+                self.participant, self.as_formula()]
+
+    def as_markdown(self):
+        return (
+            f'**[{self.start} {self.start_as_string()} : {self.end}]** '
+            f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
+            f'Formula ⟶ {self.as_formula()}')
 
     def as_pretty_string(self):
         return (f'{self.identifier} {self.name} {self.tier} '
@@ -863,8 +946,7 @@ class ActionAnnotation(Annotation):
 
     @classmethod
     def columns(cls):
-        return ['id', 'name', 'tier', 'start', 'end', 'participant',
-                'predicate', 'formula']
+        return ['id', 'name', 'tier', 'start', 'end', 'participant', 'predicate']
 
     @staticmethod
     def annotation_type():
@@ -875,5 +957,3 @@ class ActionAnnotation(Annotation):
         for annotation in st.session_state.annotations:
             max_identifier = max(max_identifier, int(annotation.identifier[1:]))
         self.identifier = f'a{max_identifier+1:04d}'
-
-
