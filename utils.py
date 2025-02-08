@@ -18,6 +18,7 @@ from copy import deepcopy
 import cv2
 import pandas as pd
 import streamlit as st
+from streamlit_timeline import st_timeline
 
 import config
 
@@ -69,7 +70,7 @@ def sidebar_display_tool_mode():
     return st.sidebar.radio(
         "Tool mode",
         ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
-        key='opt_mode',
+        key='opt_mode', index=1,
         label_visibility='collapsed')
 
 def sidebar_display_video_controls():
@@ -107,6 +108,18 @@ def sidebar_display_annotation_controls():
         'tune-end': tune_end,
         'elan': show_elan,
         'json': show_json }
+
+def sidebar_display_annotation_list_controls():
+    st.sidebar.header('Annotation list controls', divider=True)
+    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video')
+    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls')
+    timeline = st.sidebar.checkbox('Hide timeline',  key='opt_list_hide_timeline')
+    table = st.sidebar.checkbox('Hide table',  key='opt_list_hide_table')
+    return {
+        'hide-video': video,
+        'hide-controls': controls,
+        'hide-timeline': timeline,
+        'hide-table': table }
 
 def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
@@ -207,21 +220,6 @@ def display_frame(column, frame, focus=False):
     caption = f'✔︎' if focus else frame.caption()
     column.image(frame.image, channels="BGR", caption=caption)
     
-def OLDdisplay_arguments(arguments: list):
-    arg_dict = {}
-    if arguments:
-        cols = st.columns(len(arguments))
-        args = [''] * len(arguments)
-        for i, arg in enumerate(arguments):
-            with cols[i]:
-                if arg == 'Object':
-                    blocks = list(sorted(st.session_state.objects['inplay']))
-                    args[i] = st.selectbox(arg, [None] + blocks)
-                else:
-                    args[i] = st.text_input(arg)
-                arg_dict[arg] = args[i]
-    return arg_dict
-
 def display_arguments(arguments: list):
     arg_dict = {}
     if arguments:
@@ -281,16 +279,29 @@ def display_annotation(annotation, show_options: dict):
         with st.container(border=True):
             st.json(annotation.as_json())
 
-def display_annotations():
+def display_annotations(settings: dict):
+    def annotation_pp(anno: dict):
+        if anno is None:
+            return None
+        return ActionAnnotation().import_fields(anno)
+    groups = [
+        {"id": "ACTION1", "content": "action1", "style": "color: black;"},
+        {"id": "ACTION2", "content": "action2", "style": "color: black;"}]
+    options = { "selectable": True, "zoomable": True, "stack": False, "height": 200, }
     with st.container(border=True):
-        st.text('All annotations, using order of creation from last to first')
+        #st.text('All annotations, using order of creation from last to first')
         term = st.text_input('Search annotations')
-        rows = []
-        for annotation in reversed(st.session_state.annotations):
-            if not term or term in annotation.as_formula():
-                rows.append(annotation.as_row())
-        df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
-        st.table(df)
+        filtered_annotations = \
+           [a for a in reversed(st.session_state.annotations) if a.matches(term)]
+        if not settings['hide-timeline']:
+            timeline_items = get_timeline(filtered_annotations)
+            item = st_timeline(timeline_items, groups=groups, options=options)
+            if item:
+                st.write(annotation_pp(item['annotation']))
+        if not settings['hide-table']:
+            rows = [a.as_row() for a in filtered_annotations]
+            df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
+            st.table(df)
 
 def display_errors():
     for error in st.session_state.errors:
@@ -399,7 +410,18 @@ def remove_annotation(annotation_id: str):
 ## Various other utilities
 ## ----------------------------------------------------------------------------
 
-def get_video_location_from_command_line():
+def get_timeline(annotations: list) -> list:
+    basetime = '1999-01-01T00'
+    items = []
+    for n, annotation in enumerate(annotations):
+        items.append({
+            "id": annotation.identifier, "content": annotation.name,
+            "group": annotation.tier,
+            "start": f'{basetime}:{annotation.start_as_string()}',
+            "annotation": annotation.as_json()})
+    return items
+
+def get_video_location_from_command_line() -> str:
     return sys.argv[1] if len(sys.argv) > 1 else None
 
 def load_annotations():
@@ -676,6 +698,8 @@ class TimeFrame:
         return frames
 
     def get_window(self, milliseconds: int, n=4, step=100):
+        """Returns a list of all frames in a window around the given timepoint
+        in milliseconds."""
         frames = []
         for ms in range(n * -step, 0, step):
             frames.append(Frame(self.video, milliseconds + ms))
@@ -772,6 +796,15 @@ class Annotation:
             f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
             f' {self.participant} {self.as_formula()})')
 
+    def import_fields(self, annotation: dict):
+        # TODO: should we just do all what is in the dictionary?
+        for attr in ('identifier', 'tier', 'participant', 'arguments'):
+            setattr(self, attr, annotation[attr])
+        tp1 = TimePoint(milliseconds=annotation['start'])
+        tp2 = TimePoint(milliseconds=annotation['end'])
+        self.timeframe = TimeFrame(start=tp1, end=tp2)
+        return self
+
     @classmethod
     def columns(cls):
         return []
@@ -792,6 +825,13 @@ class Annotation:
             return None
         return self.timeframe.end.in_milliseconds()
     
+    def matches(self, term: str):
+        """Returns True if the search term occurs in the identifier, name or formula."""
+        # TODO: maybe add participant and tier?
+        if term in self.name or term in self.identifier:
+            return True
+        return term in self.as_formula()
+
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
@@ -839,7 +879,7 @@ class Annotation:
             'start': self.start,
             'end': self.end,
             'participant': self.participant,
-            'action': self.predicate,
+            'predicate': self.predicate,
             'arguments': self.arguments
         }
 

@@ -14,6 +14,7 @@ import json
 import time
 
 import streamlit as st
+from streamlit_timeline import st_timeline
 
 import config
 import utils
@@ -39,7 +40,9 @@ mode = utils.sidebar_display_tool_mode()
 if 'annotation' in mode:
     offset, width = utils.sidebar_display_video_controls()
 if mode == 'add annotations':
-    show = utils.sidebar_display_annotation_controls()
+    add_settings = utils.sidebar_display_annotation_controls()
+if mode == 'show annotations':
+    list_settings = utils.sidebar_display_annotation_list_controls()
 if mode == 'dev':
     dev = utils.sidebar_display_dev_controls()
 
@@ -54,7 +57,6 @@ if 'annotation' not in st.session_state:
 
 ## MAIN CONTENT
 
-
 if mode == 'add annotations':
 
     st.title('Add annotations')
@@ -65,11 +67,11 @@ if mode == 'add annotations':
         t1, t2 = utils.display_timeframe_slider()
     tf = utils.create_timeframe_from_slider_inputs(t1, t2)
 
-    if show['tune-start']:
+    if add_settings['tune-start']:
         with st.container(border=True):
             start_point = utils.display_left_boundary(tf)
 
-    if show['tune-end']:
+    if add_settings['tune-end']:
         with st.container(border=True):
             end_point = utils.display_right_boundary(tf)
 
@@ -92,7 +94,7 @@ if mode == 'add annotations':
 
     with st.container(border=True):
         #st.markdown(annotation.as_markdown())
-        utils.display_annotation(annotation, show)
+        utils.display_annotation(annotation, add_settings)
         st.button("Add", on_click=annotation.save)
 
     utils.display_errors()
@@ -101,14 +103,16 @@ if mode == 'add annotations':
 if mode == 'show annotations':
 
     st.title('Annotations')
-    utils.display_video(video, width, offset.in_seconds())
+    if not list_settings['hide-video']:
+        utils.display_video(video, width, offset.in_seconds())
     fname = st.session_state.io['json']
-    with st.container(border=True):
-        annotation_id = utils.display_remove_annotation_select()
-        st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
-    st.button('Reload annotations', on_click=utils.load_annotations)
+    if not list_settings['hide-controls']:
+        with st.container(border=True):
+            annotation_id = utils.display_remove_annotation_select()
+            st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
+        st.button('Reload annotations', on_click=utils.load_annotations)
     utils.display_messages()
-    utils.display_annotations()
+    utils.display_annotations(list_settings)
 
 
 if mode == 'show blocks':
