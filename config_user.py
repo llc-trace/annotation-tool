@@ -37,8 +37,8 @@ PREDICATES = {
 	'MOVE': [
 		{'type': 'Person', 'label': '**Person**', 'items': ['TEXT']},
 		{'type': 'Object', 'label': OBJECT_LABEL, 'items': [OBJECTS, 'TEXT']},
-		{'type': 'Source', 'label': '**Source**', 'items': [LOCATIONS, 'TEXT']},
-		{'type': 'Destination', 'label': '**Destination**', 'items': [LOCATIONS, 'TEXT']},
+		{'type': 'Source', 'label': SOURCE_LABEL, 'items': [LOCATIONS, 'TEXT']},
+		{'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [LOCATIONS, 'TEXT']},
 	]
 
 }
