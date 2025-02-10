@@ -1,27 +1,11 @@
 """
 
-TODO:
-- Use second tier for actions if there is overlap
-- Make sure that identifiers are unique
-    now all is reset to 0 when restarting the tool
-- Add reload and purge buttons on the show-annotations page?
-✔︎ Update code to show images around boundaries
-- Add more log messages
-- deal with seconds/milliseconds < 0 after adjustement
-- deal with out of bounds errors 
-    both for seek function and for left and right adjust
-- Make sure we avoid duplicate identifiers
-    use utils.annotation_identifiers())
-    also note that clicking "show elan" or "show json" the identifier
-    of the current annotation changes
-- Have the help page refer to the GitHub page?
-- Figure out more precise way for sources and destinations
-    use the propositions list for this
-- Often when removing an annotation and doing it again the
-    tool skips to "add annotations" mode
-- Check whether using the data_editor widget makes sense
-- Add a cache to the session state, it could contain all images that have
-    so far been extracted
+DPIP Action Annotator
+
+To run this:
+
+$ pip install -r requirements.txt
+$ streamlit run dpip_action_annotator.py <VIDEO_FILE>
 
 """
 
@@ -30,11 +14,13 @@ import json
 import time
 
 import streamlit as st
+from streamlit_timeline import st_timeline
 
 import config
 import utils
 
 
+DEBUG = True
 DEBUG = False
 
 st.set_page_config(page_title="DPIP Action Annotator", layout="wide")
@@ -51,13 +37,22 @@ video =  st.session_state.video
 st.sidebar.title('DPIP Action Annotation')
 utils.sidebar_display_info()
 mode = utils.sidebar_display_tool_mode()
-if True or 'annotation' in mode:
+if 'annotation' in mode:
     offset, width = utils.sidebar_display_video_controls()
-if True or mode == 'add annotations':
-    show = utils.sidebar_display_annotation_controls()
+if mode == 'add annotations':
+    add_settings = utils.sidebar_display_annotation_controls()
+if mode == 'show annotations':
+    list_settings = utils.sidebar_display_annotation_list_controls()
+if mode == 'dev':
+    dev = utils.sidebar_display_dev_controls()
 
 if DEBUG:
     st.write(utils.session_options())
+
+# This is done here and not in utils.intialize_session_state() because
+# the kind of annotation differens for actions and gestures.
+if 'annotation' not in st.session_state:
+    st.session_state.annotation = utils.ActionAnnotation()
 
 
 ## MAIN CONTENT
@@ -72,30 +67,34 @@ if mode == 'add annotations':
         t1, t2 = utils.display_timeframe_slider()
     tf = utils.create_timeframe_from_slider_inputs(t1, t2)
 
-    if show['tune-start']:
+    if add_settings['tune-start']:
         with st.container(border=True):
             start_point = utils.display_left_boundary(tf)
 
-    if show['tune-end']:
+    if add_settings['tune-end']:
         with st.container(border=True):
             end_point = utils.display_right_boundary(tf)
 
     with st.container(border=True):
+        #tier = st.selectbox(utils.create_label('Tier'), ('action-1', 'action-2'))
         predicate = utils.display_action_type_selector(st)
         action_args = config.ACTION_TYPES.get(predicate, [])
         args = utils.display_arguments(action_args)
-
-    if 'annotation' not in st.session_state:
-        st.session_state.annotation = \
-            utils.ActionAnnotation(video.path, tf, predicate, args)
+        args = utils.process_arguments(args)
+    
     annotation = st.session_state.annotation
-
+    
     # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
+    annotation.tier = utils.calculate_tier(tf)
     
+    if DEBUG:
+        st.code(annotation.as_pretty_string(), language=None)
+
     with st.container(border=True):
-        utils.display_annotation(annotation, show)
+        #st.markdown(annotation.as_markdown())
+        utils.display_annotation(annotation, add_settings)
         st.button("Add", on_click=annotation.save)
 
     utils.display_errors()
@@ -104,14 +103,16 @@ if mode == 'add annotations':
 if mode == 'show annotations':
 
     st.title('Annotations')
-    utils.display_video(video, width, offset.in_seconds())
+    if not list_settings['hide-video']:
+        utils.display_video(video, width, offset.in_seconds())
     fname = st.session_state.io['json']
-    with st.container(border=True):
-        annotation_id = utils.display_remove_annotation_select()
-        st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
-    st.button('Reload annotations', on_click=utils.load_annotations)
+    if not list_settings['hide-controls']:
+        with st.container(border=True):
+            annotation_id = utils.display_remove_annotation_select()
+            st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
+        st.button('Reload annotations', on_click=utils.load_annotations)
     utils.display_messages()
-    utils.display_annotations()
+    utils.display_annotations(list_settings)
 
 
 if mode == 'show blocks':
@@ -133,3 +134,14 @@ if mode == 'help':
 
     with open('manual.md') as fh:
         st.markdown(fh.read())
+
+
+if mode == 'dev':
+
+    if dev['session_state']:
+        with st.container(border=True):
+            st.write(st.session_state)
+    if dev['log']:
+        with open(st.session_state.io['log']) as fh:
+            with st.container(border=True):
+                st.code(fh.read(), language=None)

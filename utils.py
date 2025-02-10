@@ -12,15 +12,19 @@ import time
 import pathlib
 import datetime
 import pathlib
+import functools
+from copy import deepcopy
 
 import cv2
 import pandas as pd
 import streamlit as st
+from streamlit_timeline import st_timeline
 
 import config
 
 
 ## Streamlit utilities
+## ----------------------------------------------------------------------------
 
 def intialize_session_state():
     video_path = get_video_location_from_command_line()
@@ -65,8 +69,8 @@ def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
     return st.sidebar.radio(
         "Tool mode",
-        ['add annotations', 'show annotations', 'show blocks', 'help'],
-        key='opt_mode',
+        ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
+        key='opt_mode', index=1,
         label_visibility='collapsed')
 
 def sidebar_display_video_controls():
@@ -105,6 +109,27 @@ def sidebar_display_annotation_controls():
         'elan': show_elan,
         'json': show_json }
 
+def sidebar_display_annotation_list_controls():
+    st.sidebar.header('Annotation list controls', divider=True)
+    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video')
+    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls')
+    timeline = st.sidebar.checkbox('Hide timeline',  key='opt_list_hide_timeline')
+    table = st.sidebar.checkbox('Hide table',  key='opt_list_hide_table')
+    return {
+        'hide-video': video,
+        'hide-controls': controls,
+        'hide-timeline': timeline,
+        'hide-table': table }
+
+def sidebar_display_dev_controls():
+    st.sidebar.header('Developer goodies', divider=True)
+    dev_session = st.sidebar.checkbox('Show session_state', value=False)
+    dev_log = st.sidebar.checkbox('Show log', value=False)
+    return {
+        'session_state': dev_session,
+        'log': dev_log,
+        }
+
 def display_video(video: 'Video', width, seconds):
     st.info(video.filename)
     margin = max((100 - width), 0.01)
@@ -112,6 +137,9 @@ def display_video(video: 'Video', width, seconds):
     container.video(video.path, start_time=seconds)
 
 def display_timeframe_slider():
+    """Displays a slider with two timepoints and returns a pair of instances of
+    datetime.time. The associated action named action_change_timeframe() sets the
+    annotation's timeframe (with start and end timepoint) in the session state."""
     video = st.session_state.video
     return st.slider(label=create_label("Select timeframe"),
                      key='opt_timeframe',
@@ -137,26 +165,6 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     return box.slider(
         create_label(label), d - margin, d + margin,
         value=d, format=config.SLIDER_TIME_FORMAT, step=step)
-
-
-class WindowCache:
-
-    def __init__(self):
-        self.data = {}
-
-    def __len__(self):
-        return len(self.data)
-
-    def __str__(self):
-        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
-        return f'<WindowCache with {len(self)} timepoints  {points}>'
-
-    def __getitem__(self, i):
-        return self.data[i]
-
-    def __setitem__(self, i, val):
-        self.data[i] = val
-
 
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
@@ -217,15 +225,49 @@ def display_arguments(arguments: list):
     if arguments:
         cols = st.columns(len(arguments))
         args = [''] * len(arguments)
+        blocks = list(sorted(st.session_state.objects['inplay']))
+        locations = config.ABSOLUTE_LOCATIONS
+        relations = list(config.POSITIONAL_RELATIONS.keys())
         for i, arg in enumerate(arguments):
-            with cols[i]:
-                if arg == 'Object':
-                    blocks = list(sorted(st.session_state.objects['inplay']))
-                    args[i] = st.selectbox(arg, [None] + blocks)
-                else:
-                    args[i] = st.text_input(arg)
-                arg_dict[arg] = args[i]
+            st.write(config.ARGUMENT_MAPPINGS.get(arg, arg))
+            if arg == 'Object':
+                args[i] = st.selectbox(arg, [None] + blocks, label_visibility='collapsed')
+            elif arg in config.LOCATION_TYPES:
+                args[i] = location_picker(arg, blocks, locations, relations)
+            else:
+                args[i] = st.text_input(arg)
+            arg_dict[arg] = args[i]
     return arg_dict
+
+def location_picker(arg, blocks, locations, relations):
+    def box(label, options, key):
+        return st.selectbox(label, options, key=key, label_visibility='collapsed')
+    def text(label, key):
+        return st.text_input(label, key=key, label_visibility='collapsed')
+    loc_selections = [None] + blocks + locations
+    rel_selections = [None] + relations
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        rel = box(f'rel-{arg}', rel_selections, key=f'rel-{arg}')
+    with c2:
+        loc = box(f'loc-{arg}', loc_selections, key=f'loc-{arg}')
+    with c3:
+        txt = text(f'free-{arg}', key=f'free-{arg}')
+    return {'rel': rel, 'loc': loc, 'txt': txt}
+
+def process_arguments(args):
+    processed_args = {}
+    for arg, val in args.items():
+        if isinstance(val, dict):
+            if val.get('rel') and val.get('loc'):
+                processed_args[arg] = f'{val["rel"]}({val["loc"]})'
+            elif val['txt']:
+                processed_args[arg] = val['txt']
+            else:
+                processed_args[arg] = None
+        elif isinstance(val, str) or val is None:
+            processed_args[arg] = val
+    return processed_args
 
 def display_annotation(annotation, show_options: dict):
     st.info('Current annotation')
@@ -237,16 +279,29 @@ def display_annotation(annotation, show_options: dict):
         with st.container(border=True):
             st.json(annotation.as_json())
 
-def display_annotations():
+def display_annotations(settings: dict):
+    def annotation_pp(anno: dict):
+        if anno is None:
+            return None
+        return ActionAnnotation().import_fields(anno)
+    groups = [
+        {"id": "ACTION1", "content": "action1", "style": "color: black;"},
+        {"id": "ACTION2", "content": "action2", "style": "color: black;"}]
+    options = { "selectable": True, "zoomable": True, "stack": False, "height": 200, }
     with st.container(border=True):
-        st.text('All annotations, using order of creation from last to first')
+        #st.text('All annotations, using order of creation from last to first')
         term = st.text_input('Search annotations')
-        rows = []
-        for annotation in reversed(st.session_state.annotations):
-            if not term or term in annotation.as_formula():
-                rows.append(annotation.as_row())
-        df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
-        st.table(df)
+        filtered_annotations = \
+           [a for a in reversed(st.session_state.annotations) if a.matches(term)]
+        if not settings['hide-timeline']:
+            timeline_items = get_timeline(filtered_annotations)
+            item = st_timeline(timeline_items, groups=groups, options=options)
+            if item:
+                st.write(annotation_pp(item['annotation']))
+        if not settings['hide-table']:
+            rows = [a.as_row() for a in filtered_annotations]
+            df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
+            st.table(df)
 
 def display_errors():
     for error in st.session_state.errors:
@@ -288,10 +343,13 @@ def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
 
 
-# Actions
+## Actions
+## ----------------------------------------------------------------------------
 
 def action_change_timeframe():
     t1, t2 = st.session_state.opt_timeframe
+    if st.session_state.annotation.timeframe is None:
+        st.session_state.annotation.timeframe = TimeFrame()
     st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
     st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
 
@@ -349,9 +407,21 @@ def remove_annotation(annotation_id: str):
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
 
 
-# Various other utilities
+## Various other utilities
+## ----------------------------------------------------------------------------
 
-def get_video_location_from_command_line():
+def get_timeline(annotations: list) -> list:
+    basetime = '1999-01-01T00'
+    items = []
+    for n, annotation in enumerate(annotations):
+        items.append({
+            "id": annotation.identifier, "content": annotation.name,
+            "group": annotation.tier,
+            "start": f'{basetime}:{annotation.start_as_string()}',
+            "annotation": annotation.as_json()})
+    return items
+
+def get_video_location_from_command_line() -> str:
     return sys.argv[1] if len(sys.argv) > 1 else None
 
 def load_annotations():
@@ -375,10 +445,12 @@ def load_annotations():
                     start=TimePoint(milliseconds=raw_annotation['start']),
                     end=TimePoint(milliseconds=raw_annotation['end']))
                 annotation = ActionAnnotation(
+                    identifier=raw_annotation['identifier'],
+                    tier=raw_annotation['tier'],
                     video_path=video_path,
                     timeframe=timeframe,
                     predicate=raw_annotation['action'],
-                    args=raw_annotation['arguments'] )
+                    arguments=raw_annotation['arguments'] )
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -430,7 +502,52 @@ def create_object_pool():
                 pool.append(f'{size}{color}Block{identifier}')
     return set(pool)
 
+def current_timeframes():
+    """Returns all timeframes of all the current annotations."""
+    return [annotation.timeframe for annotation in st.session_state.annotations]
 
+def calculate_tier(tf: 'TimeFrame'):
+    """Calculate the tier for an annotation based on overlap. This is   only relevant
+    for action annotations and assumes there are only two tiers."""
+    # TODO: this seems a bit haphazard
+    taken = current_timeframes()
+    #for tf in taken: st.write(tf)
+    for taken_tf in taken:
+        #print('   ', taken_tf, overlap(tf, taken_tf))
+        if overlap(tf, taken_tf):
+            return 'ACTION2'
+    return 'ACTION1'
+
+def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
+    """Return True if two time frames overlap, False otherwise."""
+    # TODO: mayhap put this on the TimeFrame class
+    if tf1.end <= tf2.start:
+        return False
+    if tf2.end <= tf1.start:
+        return False
+    return True
+
+
+class WindowCache:
+
+    def __init__(self):
+        self.data = {}
+
+    def __len__(self):
+        return len(self.data)
+
+    def __str__(self):
+        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
+        return f'<WindowCache with {len(self)} timepoints  {points}>'
+
+    def __getitem__(self, i):
+        return self.data[i]
+
+    def __setitem__(self, i, val):
+        self.data[i] = val
+
+
+@functools.total_ordering
 class TimePoint:
 
     """Utility class to deal with time points, where a time point refers to an offset
@@ -441,6 +558,7 @@ class TimePoint:
     def __init__(self, hours=0, minutes=0, seconds=0, milliseconds=0):
         #if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
         #    raise ValueError('Values need to be >= 0')
+        #print('===', hours, minutes, seconds, milliseconds)
         self.hours = hours
         self.minutes = minutes
         self.seconds = seconds
@@ -449,6 +567,17 @@ class TimePoint:
 
     def __str__(self):
         return f'<{self.__class__.__name__} {self.timestamp()}>'
+
+    def __eq__(self, other):
+        return self.in_milliseconds() == other.in_milliseconds()
+
+    def __lt__(self, other):
+        return self.in_milliseconds() < other.in_milliseconds()
+
+    def copy(self):
+        return TimePoint(
+            hours=self.hours, minutes=self.minutes,
+            seconds=self.seconds, milliseconds=self.milliseconds)
 
     def hh(self):
         """Return number of hours as a string."""
@@ -474,6 +603,9 @@ class TimePoint:
     def normalize(self):
         """Normalize values so that millisseconds < 1000, and seconds and minutes
         are < 60. Normalization leaves the hours alone"""
+        #print('>>>',self)
+        #print('---', type(self.seconds), type(self.milliseconds))
+        #print('---', self.seconds, self.milliseconds)
         if self.milliseconds > 999:
             seconds = int(self.milliseconds / 1000)
             self.seconds += seconds
@@ -508,7 +640,7 @@ class TimePoint:
 
 class TimeFrame:
 
-    def __init__(self, start: TimePoint, end: TimePoint, video=None):
+    def __init__(self, start: TimePoint = None, end: TimePoint = None, video=None):
         self.start = start
         self.end = end
         self.video = video
@@ -517,7 +649,14 @@ class TimeFrame:
         return f'{self.start} ==> {self.end}  [length={len(self)}]'
 
     def __len__(self):
-        return self.end.in_seconds() - self.start.in_seconds()
+        if self.start is not None and self.end is not None:
+            return self.end.in_seconds() - self.start.in_seconds()
+        else:
+            return 0
+
+    def copy(self):
+        return TimeFrame(
+            start=self.start.copy(), end=self.end.copy(), video=self.video)
 
     def adjust_start(self, milliseconds: int):
         """Adjust the start point, using milliseconds."""
@@ -559,6 +698,8 @@ class TimeFrame:
         return frames
 
     def get_window(self, milliseconds: int, n=4, step=100):
+        """Returns a list of all frames in a window around the given timepoint
+        in milliseconds."""
         frames = []
         for ms in range(n * -step, 0, step):
             frames.append(Frame(self.video, milliseconds + ms))
@@ -638,45 +779,77 @@ class Annotation:
     actions we have put and remove). In addition, annotations are intervals so they
     have start and end offsets."""
 
-    def __init__(self, video_path: str, timeframe: TimeFrame,
-                 participant: str, predicate: str, args: dict):
+    def __init__(self, identifier : str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, participant: str = None,
+                 predicate: str = None, arguments: dict = {}, tier: str = None):
+        self.identifier = identifier
         self.video_path = video_path
-        self.timeframe = timeframe
+        self.timeframe = TimeFrame() if timeframe is None else timeframe
         self.participant = participant
         self.predicate = predicate
-        self.arguments = args
+        self.arguments = arguments
+        self.tier = tier
         self.errors = []
 
     def __str__(self):
         return (
-            f'{self.identifier} {self.start} {self.end},' +
+            f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
             f' {self.participant} {self.as_formula()})')
+
+    def import_fields(self, annotation: dict):
+        # TODO: should we just do all what is in the dictionary?
+        for attr in ('identifier', 'tier', 'participant', 'arguments'):
+            setattr(self, attr, annotation[attr])
+        tp1 = TimePoint(milliseconds=annotation['start'])
+        tp2 = TimePoint(milliseconds=annotation['end'])
+        self.timeframe = TimeFrame(start=tp1, end=tp2)
+        return self
 
     @classmethod
     def columns(cls):
         return []
 
     @property
+    def name(self):
+        return self.elan_identifier()
+
+    @property
     def start(self):
+        if self.timeframe is None or self.timeframe.start is None:
+            return None
         return self.timeframe.start.in_milliseconds()
 
     @property
     def end(self):
+        if self.timeframe is None or self.timeframe.end is None:
+            return None
         return self.timeframe.end.in_milliseconds()
     
+    def matches(self, term: str):
+        """Returns True if the search term occurs in the identifier, name or formula."""
+        # TODO: maybe add participant and tier?
+        if term in self.name or term in self.identifier:
+            return True
+        return term in self.as_formula()
+
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
         # TODO: add check for out of bounds start or end
+        if self.start is None:
+            self.errors.append(f'WARNING: start position is not specified')
+        if self.end is None:
+            self.errors.append(f'WARNING: end position is not specified')
         if self.predicate is None:
             self.errors.append(f'WARNING: {self.annotation_type()} type is not specified')
         for arg_name, arg_value in self.arguments.items():
             if not arg_value:
                 self.errors.append(
                     f'WARNING: required argument "{arg_name}" is not specified')
-        if self.start > self.end:
-            self.errors.append(
-                'WARNING: the start of the interval cannot be before the end')
+        if self.start is not None and self.end is not None:
+            if self.start > self.end:
+                self.errors.append(
+                    'WARNING: the start of the interval cannot be before the end')
         return True if not self.errors else False
 
     def elan_identifier(self):
@@ -684,11 +857,15 @@ class Annotation:
         time. The elan identifier is more like a summary, using a prefix plus the
         minutes and seconds from the start timepoint, it is not required to be
         unique."""
-        # allow for the case where the action/gesture type is not generated yet
-        prefix = 'X' if self.predicate is None else self.predicate[0]
-        tp = TimePoint(seconds=self.start)
-        offset= f'{tp.mm()}{tp.ss()}'
-        return f'{prefix}{offset}'
+        try:
+            # TODO: this may be different for the gesture case if we don't use 
+            # 'predicate' for that field
+            prefix = 'X' if self.predicate is None else self.predicate[0]
+            tp = TimePoint(milliseconds=self.start)
+            offset= f'{tp.mm()}{tp.ss()}'
+            return f'{prefix}{offset}'
+        except:
+            return None
 
     def as_formula(self):
         formatted_args = ', '.join([f'{a}="{v}"' for a,v in self.arguments.items()])
@@ -697,42 +874,76 @@ class Annotation:
     def as_json(self):
         return {
             'identifier': self.identifier,
+            'name': self.name,
+            'tier': self.tier,
             'start': self.start,
             'end': self.end,
             'participant': self.participant,
-            'action': self.predicate,
+            'predicate': self.predicate,
             'arguments': self.arguments
         }
 
     def as_elan(self):
-        offsets = f'{self.start/1000:.3f}\t{self.end/1000:.3f}.0'
-        return f'ACTION\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
+        start = f'{self.start/1000:.3f}' if self.start else 'None'
+        end = f'{self.end/1000:.3f}' if self.end else 'None'
+        #offsets = f'{self.start/1000:.3f}\t{self.end/1000:.3f}'
+        offsets = f'{start}\t{end}'
+        return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
-        return [self.identifier, self.start_as_string(), self.end_as_string(),
-                self.participant, self.predicate, self.as_formula()]
+        return [self.identifier, self.name, self.tier,
+                self.start_as_string(), self.end_as_string(),
+                self.participant, self.as_formula()]
+
+    def as_markdown(self):
+        return (
+            f'**[{self.start} {self.start_as_string()} : {self.end}]** '
+            f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
+            f'Formula ⟶ {self.as_formula()}')
+
+    def as_pretty_string(self):
+        return (f'{self.identifier} {self.name} {self.tier} '
+                + f'{self.start_as_string()} {self.end_as_string()} {self.participant}\n'
+                + f'{self.predicate} {self.as_formula()}')
 
     def start_as_string(self):
-        t = TimePoint(milliseconds=self.start)
-        return f'{t.mm()}:{t.ss()}.{t.mmm()}'
+        return self.point_as_string(self.start)
 
     def end_as_string(self):
-        t = TimePoint(milliseconds=self.end)
+        return self.point_as_string(self.end)
+
+    def point_as_string(self, ms: int):
+        # TODO: this should not be an instance method here
+        if ms is None:
+            return 'None'
+        t = TimePoint(milliseconds=ms)
         return f'{t.mm()}:{t.ss()}.{t.mmm()}'
+
+    def copy(self):
+        return Annotation(
+            identifier=self.identifier,
+            tier=self.tier,
+            video_path=self.video_path,
+            participant=self.participant,
+            predicate=self.predicate,
+            timeframe=self.timeframe.copy(),
+            arguments=deepcopy(self.arguments))
 
     def save(self):
         if self.is_valid():
-            st.session_state.annotations.append(self)
+            self.assign_identifier()
+            st.session_state.annotations.append(self.copy())
             json_file = st.session_state.io['json']
             elan_file = st.session_state.io['elan']
             with open(json_file, 'a') as fh:
                 fh.write(json.dumps(self.as_json()) + '\n')
             with open(elan_file, 'a') as fh:
-                fh.write(self.as_elan())
+                fh.write(self.as_elan() + '\n')
             st.session_state.action_type = None
             log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
         st.session_state.opt_show_boundary = False
+        st.session_state.annotation = ActionAnnotation()
         for error in self.errors:
             log(error)
 
@@ -742,11 +953,11 @@ class GestureAnnotation(Annotation):
     identifier = 0
 
     def __init__(self, video_path: str, start: int, end: int,
-                 participant: str, subtype: str, args: list):
+                 participant: str, subtype: str, arguments: list):
         self.identifier = self.get_identifier()
         super().__init__(
             video_path=video_path, start=start, end=end,
-            participant=participant, subtype=subtype, args=args)
+            participant=participant, subtype=subtype, arguments=arguments)
 
     @staticmethod
     def annotation_type():
@@ -763,24 +974,26 @@ class ActionAnnotation(Annotation):
     # identifier when we add the annotation (after testing for validity), or
     # else go back to using an identifier created from a timestamp.
 
-    identifier = 0
+    identifier = 1
 
-    def __init__(self, video_path: str, timeframe: TimeFrame, predicate: str, args: list):
-        self.identifier = self.get_identifier()
+    def __init__(self, identifier: str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, predicate: str = None,
+                 arguments: list = {}, tier: str = None):
         super().__init__(
-            video_path=video_path, timeframe=timeframe,
-            participant='Builder', predicate=predicate, args=args)
+            identifier=identifier, video_path=video_path, timeframe=timeframe,
+            participant='Builder', predicate=predicate, arguments=arguments,
+            tier=tier)
 
     @classmethod
     def columns(cls):
-        return ['id', 'start', 'end', 'participant', 'predicate', 'formula']
+        return ['id', 'name', 'tier', 'start', 'end', 'participant', 'predicate']
 
     @staticmethod
     def annotation_type():
         return 'Action'
 
-    def get_identifier(self):
-        self.__class__.identifier += 1
-        return f'a{self.__class__.identifier:04d}'
-
-
+    def assign_identifier(self):
+        max_identifier = 0
+        for annotation in st.session_state.annotations:
+            max_identifier = max(max_identifier, int(annotation.identifier[1:]))
+        self.identifier = f'a{max_identifier+1:04d}'
