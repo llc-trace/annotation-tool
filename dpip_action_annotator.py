@@ -55,6 +55,61 @@ if 'annotation' not in st.session_state:
     st.session_state.annotation = utils.ActionAnnotation()
 
 
+
+def display_action_type_selector(column, key='action_type'):
+    label = utils.create_label('Select action type')
+    return st.pills(label, config.PREDICATES.keys(), key=key)
+
+
+def display_arguments(arguments: list):
+    def text(key):
+        return st.text_input(
+            "dummy", key=key, label_visibility='collapsed')
+    def box(key, options):
+        return st.selectbox(
+            "dummy", [None] + options, key=key, label_visibility='collapsed')
+    arg_dict = {}
+    if arguments:
+        args = [''] * len(arguments)
+        for i, arg in enumerate(arguments):
+            argtype = arg['type']
+            label = arg['label']
+            items = arg['items']
+            st.write(label)
+            args[i] = [None] * len(items)
+            cols = st.columns(len(items))
+            for j, item in enumerate(items):
+                if item == 'TEXT':
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{argtype}')
+                elif isinstance(item, list):
+                    with cols[j]:
+                        args[i][j] = box(f'{i}:{j}-{argtype}', item) 
+            arg_dict[argtype] = args[i]
+    return arg_dict
+
+
+def process_arguments(args):
+    """Pull the relevant values out of the return values from the widgets."""
+    # TODO: this now makes way too many assumptions, the config settings should
+    # include instructions on how to combine widget return values when there are
+    # more than one, for example, it should say something like "[#1(#2), #3]" to
+    # replace the assumption now built into the third case below.
+    processed_args = {}
+    for arg, val in args.items():
+        if len(val) == 1:
+            processed_args[arg] = val[0]
+        elif len(val) == 2:
+            processed_args[arg] = val[0] if val[0] is not None else val[1]
+        elif len(val) == 3:
+            if val[0] is not None and val[1] is not None:
+                processed_args[arg] = f'{val[0]}({val[1]})'
+            else:
+                processed_args[arg] = val[2]
+    return processed_args
+
+
+
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -76,11 +131,10 @@ if mode == 'add annotations':
             end_point = utils.display_right_boundary(tf)
 
     with st.container(border=True):
-        #tier = st.selectbox(utils.create_label('Tier'), ('action-1', 'action-2'))
-        predicate = utils.display_action_type_selector(st)
-        action_args = config.ACTION_TYPES.get(predicate, [])
-        args = utils.display_arguments(action_args)
-        args = utils.process_arguments(args)
+        predicate = display_action_type_selector(st)
+        action_args = config.PREDICATES.get(predicate, [])
+        args = display_arguments(action_args)
+        args = process_arguments(args)
     
     annotation = st.session_state.annotation
     

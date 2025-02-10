@@ -41,7 +41,7 @@ def intialize_session_state():
         log(f'Loaded video at {video_path}')
     if not 'objects' in st.session_state:
         st.session_state.objects = {
-            'pool': create_object_pool(),
+            'pool': config.create_object_pool(),
             'inplay': set() }
     if not 'annotations' in st.session_state:
         load_annotations()
@@ -221,6 +221,8 @@ def display_frame(column, frame, focus=False):
     column.image(frame.image, channels="BGR", caption=caption)
     
 def display_arguments(arguments: list):
+    # TODO: this should be driven by config settings, now relations etcetera
+    # are hard-coded here.
     arg_dict = {}
     if arguments:
         cols = st.columns(len(arguments))
@@ -296,6 +298,10 @@ def display_annotations(settings: dict):
         if not settings['hide-timeline']:
             timeline_items = get_timeline(filtered_annotations)
             item = st_timeline(timeline_items, groups=groups, options=options)
+            #if st.button("What's the date doing there?"):
+            #    st.info(
+            #        "It is a timeline and by default it prints the date. The timeframe"
+            #        " of the entire video starts at the first second of that date.")
             if item:
                 st.write(annotation_pp(item['annotation']))
         if not settings['hide-table']:
@@ -449,7 +455,7 @@ def load_annotations():
                     tier=raw_annotation['tier'],
                     video_path=video_path,
                     timeframe=timeframe,
-                    predicate=raw_annotation['action'],
+                    predicate=raw_annotation['predicate'],
                     arguments=raw_annotation['arguments'] )
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
@@ -493,14 +499,6 @@ def create_label(text: str, size='normalsize'):
     """Return formatted text that can be used as a label of a particular size,
     for sizes use the ones defined by LaTeX (small, large, Large, etcetera)."""
     return r"$\textsf{" + f'\\{size} {text}' + "}$"
-
-def create_object_pool():
-    pool = []
-    for size in ('Large', 'Small'):
-        for color in ('Green', 'Red', 'Blue', 'Yellow'):
-            for identifier in range(1, 7):
-                pool.append(f'{size}{color}Block{identifier}')
-    return set(pool)
 
 def current_timeframes():
     """Returns all timeframes of all the current annotations."""
