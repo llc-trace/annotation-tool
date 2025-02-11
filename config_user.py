@@ -1,4 +1,6 @@
 
+TITLE = "Leave/Return Annotator"
+
 def create_object_pool():
     return set()
 
@@ -34,11 +36,14 @@ PREDICATES = {
 		{'type': 'Person', 'label': '**Person**', 'items': ['TEXT']},
 		{'type': 'Location', 'label': LOCATION_LABEL, 'items': [LOCATIONS, 'TEXT']}],
 
+	'RETURN': [
+		{'type': 'Person', 'label': '**Person**', 'items': ['TEXT']},
+		{'type': 'Location', 'label': LOCATION_LABEL, 'items': [LOCATIONS, 'TEXT']}],
+
 	'MOVE': [
 		{'type': 'Person', 'label': '**Person**', 'items': ['TEXT']},
 		{'type': 'Object', 'label': OBJECT_LABEL, 'items': [OBJECTS, 'TEXT']},
 		{'type': 'Source', 'label': SOURCE_LABEL, 'items': [LOCATIONS, 'TEXT']},
-		{'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [LOCATIONS, 'TEXT']},
-	]
+		{'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [LOCATIONS, 'TEXT']}]
 
 }

@@ -70,7 +70,7 @@ def sidebar_display_tool_mode():
     return st.sidebar.radio(
         "Tool mode",
         ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
-        key='opt_mode', index=1,
+        key='opt_mode', index=0,
         label_visibility='collapsed')
 
 def sidebar_display_video_controls():

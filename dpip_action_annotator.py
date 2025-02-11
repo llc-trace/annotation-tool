@@ -23,7 +23,7 @@ import utils
 DEBUG = True
 DEBUG = False
 
-st.set_page_config(page_title="DPIP Action Annotator", layout="wide")
+st.set_page_config(page_title=config.TITLE, layout="wide")
 
 utils.intialize_session_state()
 video =  st.session_state.video
@@ -34,7 +34,7 @@ video =  st.session_state.video
 # The sidebar prints some info, controls the annotation mode and shows video 
 # controls and other controls
 
-st.sidebar.title('DPIP Action Annotation')
+st.sidebar.title(config.TITLE)
 utils.sidebar_display_info()
 mode = utils.sidebar_display_tool_mode()
 if 'annotation' in mode:
@@ -62,9 +62,9 @@ def display_action_type_selector(column, key='action_type'):
 
 
 def display_arguments(arguments: list):
-    def text(key):
+    def text(key, value=None):
         return st.text_input(
-            "dummy", key=key, label_visibility='collapsed')
+            "dummy", key=key, value=value, label_visibility='collapsed')
     def box(key, options):
         return st.selectbox(
             "dummy", [None] + options, key=key, label_visibility='collapsed')
@@ -82,11 +82,29 @@ def display_arguments(arguments: list):
                 if item == 'TEXT':
                     with cols[j]:
                         args[i][j] = text(f'{i}:{j}-{argtype}')
+                elif isinstance(item, str):
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{argtype}', item)
                 elif isinstance(item, list):
+                    item = import_session_objects(item)
                     with cols[j]:
                         args[i][j] = box(f'{i}:{j}-{argtype}', item) 
             arg_dict[argtype] = args[i]
     return arg_dict
+
+
+def import_session_objects(options: list):
+    """Take the list of options intended for the selectbox and check for items that
+    need to be expanded. At the moment, the only target is the string that indicates
+    all blocks that are in play need to be inseted."""
+    expanded_list = []
+    for option in options:
+        if option == '**session_state:blocks**':
+            # sort the blocks because it is a set
+            expanded_list.extend(sorted(st.session_state.objects['inplay']))
+        else:
+            expanded_list.append(option)
+    return expanded_list
 
 
 def process_arguments(args):
