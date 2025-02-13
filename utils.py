@@ -18,7 +18,8 @@ from copy import deepcopy
 import cv2
 import pandas as pd
 import streamlit as st
-from streamlit_timeline import st_timeline
+import streamlit_timeline
+#from streamlit_timeline import st_timeline
 
 import config
 
@@ -278,14 +279,17 @@ def display_annotations_timeline(annotations: list):
     height = ((len(tiers) * 1.3) + 1.8) * 42
     options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     timeline_items = get_timeline(annotations)
-    item = st_timeline(timeline_items, groups=groups, options=options)
-    #if st.button("What's the date doing there?"):
-    #    st.info(
-    #        "It is a timeline and by default it prints the date. The timeframe"
-    #        " of the entire video starts at the first second of that date.")
-    if item:
-        st.write(annotation_pp(item['annotation']))
-        #st.write(annotation_pp(item['annotation']).as_json())
+    try:
+        item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
+        #if st.button("What's the date doing there?"):
+        #    st.info(
+        #        "It is a timeline and by default it prints the date. The timeframe"
+        #        " of the entire video starts at the first second of that date.")
+        if item:
+            st.write(annotation_pp(item['annotation']))
+            #st.write(annotation_pp(item['annotation']).as_json())
+    except:
+        pass
 
 def display_annotations_table(annotations: list):
     rows = [a.as_row() for a in annotations]
