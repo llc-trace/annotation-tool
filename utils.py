@@ -256,10 +256,6 @@ def display_annotation(annotation, show_options: dict):
             st.json(annotation.as_json())
 
 def display_annotations(settings: dict):
-    def annotation_pp(anno: dict):
-        if anno is None:
-            return None
-        return Annotation().import_fields(anno)
     with st.container(border=True):
         term = st.text_input('Search annotations')
         filtered_annotations = \
@@ -270,6 +266,10 @@ def display_annotations(settings: dict):
             display_annotations_table(filtered_annotations)
 
 def display_annotations_timeline(annotations: list):
+    def annotation_pp(anno: dict):
+        if anno is None:
+            return None
+        return Annotation().import_fields(anno)
     tiers = sorted(set([a.tier for a in annotations if a.tier]))
     groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
     # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 

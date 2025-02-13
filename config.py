@@ -41,6 +41,9 @@ PREDICATES = {}
 PROPERTIES = []
 DEFAULTS = {}
 
+# Default task name, should be overwritten in task configuration files
+DEFAULT_TASK = 'Main'
+
 # Some tasks don't care about tiers (aka annotation layers), but they exist
 # anyway so these settings make sure that all annotations are at least assigned
 # to a default tier.
