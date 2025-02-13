@@ -44,6 +44,13 @@ PREDICATES = {
 		{'type': 'Person', 'label': '**Person**', 'items': ['TEXT']},
 		{'type': 'Object', 'label': OBJECT_LABEL, 'items': [OBJECTS, 'TEXT']},
 		{'type': 'Source', 'label': SOURCE_LABEL, 'items': [LOCATIONS, 'TEXT']},
-		{'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [LOCATIONS, 'TEXT']}]
+		{'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [LOCATIONS, 'TEXT']}],
+
+	# initial experiment to see how we can deal with open-ended predicate lists
+    'OTHER': [
+        {'type': 'name', 'label': '**Predicate**', 'items': ['TEXT']},
+        {'type': 'ARG0', 'label': '**ARG0**', 'items': ['TEXT']},
+        {'type': 'ARG1', 'label': '**ARG1**', 'items': ['TEXT']},
+        {'type': 'ARG2', 'label': '**ARG2**', 'items': ['TEXT']}],
 
 }

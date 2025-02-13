@@ -9,7 +9,6 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Action Annotator"
 
-# Needed when initializing the session state
 def create_object_pool():
     pool = []
     for size in ('Large', 'Small'):
@@ -71,3 +70,11 @@ PREDICATES = {
         {'type': 'Source', 'label': SOURCE_LABEL, 'items': [RELATIONS, LOCATIONS, 'TEXT']},
         {'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [RELATIONS, LOCATIONS, 'TEXT']}],
 }
+
+# TODO: not quite sure how to do this in a way that is intuitive
+DEFAULTS = {
+    ('properties', 'Participant'): 'Builder'
+}
+
+
+USE_TIERS = True

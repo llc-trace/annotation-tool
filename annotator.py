@@ -1,11 +1,13 @@
 """
 
-DPIP Action Annotator
+Timeline Annotator
+
+Originally created for Action and Gesture annotation for the TRACE project.
 
 To run this:
 
 $ pip install -r requirements.txt
-$ streamlit run dpip_action_annotator.py <VIDEO_FILE>
+$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG>
 
 """
 
@@ -49,29 +51,12 @@ if mode == 'dev':
 if DEBUG:
     st.write(utils.session_options())
 
-# This is done here and not in utils.intialize_session_state() because
-# the kind of annotation differens for actions and gestures.
-if 'annotation' not in st.session_state:
-    st.session_state.annotation = utils.ActionAnnotation()
 
-
-
-def display_action_type_selector(column, key='action_type'):
-    label = utils.create_label('Select action type')
-    return st.pills(label, config.PREDICATES.keys(), key=key)
-
-
-def display_arguments(arguments: list):
-    def text(key, value=None):
-        return st.text_input(
-            "dummy", key=key, value=value, label_visibility='collapsed')
-    def box(key, options):
-        return st.selectbox(
-            "dummy", [None] + options, key=key, label_visibility='collapsed')
-    arg_dict = {}
-    if arguments:
-        args = [''] * len(arguments)
-        for i, arg in enumerate(arguments):
+def display_inputs(inputs: list):
+    inputs_dict = {}
+    if inputs:
+        args = [''] * len(inputs)
+        for i, arg in enumerate(inputs):
             argtype = arg['type']
             label = arg['label']
             items = arg['items']
@@ -81,16 +66,16 @@ def display_arguments(arguments: list):
             for j, item in enumerate(items):
                 if item == 'TEXT':
                     with cols[j]:
-                        args[i][j] = text(f'{i}:{j}-{argtype}')
+                        args[i][j] = utils.text(f'{i}:{j}-{argtype}')
                 elif isinstance(item, str):
                     with cols[j]:
-                        args[i][j] = text(f'{i}:{j}-{argtype}', item)
+                        args[i][j] = utils.text(f'{i}:{j}-{argtype}', item)
                 elif isinstance(item, list):
                     item = import_session_objects(item)
                     with cols[j]:
-                        args[i][j] = box(f'{i}:{j}-{argtype}', item) 
-            arg_dict[argtype] = args[i]
-    return arg_dict
+                        args[i][j] = utils.box(f'{i}:{j}-{argtype}', item) 
+            inputs_dict[argtype] = args[i]
+    return inputs_dict
 
 
 def import_session_objects(options: list):
@@ -127,7 +112,6 @@ def process_arguments(args):
     return processed_args
 
 
-
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -136,36 +120,36 @@ if mode == 'add annotations':
     
     utils.display_video(video, width, offset.in_seconds())
 
+    # The box with timeframe settings
     with st.container(border=True):
         t1, t2 = utils.display_timeframe_slider()
-    tf = utils.create_timeframe_from_slider_inputs(t1, t2)
+        tf = utils.create_timeframe_from_slider_inputs(t1, t2)
+        if add_settings['tune-start']:
+            utils.display_left_boundary(tf)
+        if add_settings['tune-end']:
+            utils.display_right_boundary(tf)
 
-    if add_settings['tune-start']:
-        with st.container(border=True):
-            start_point = utils.display_left_boundary(tf)
-
-    if add_settings['tune-end']:
-        with st.container(border=True):
-            end_point = utils.display_right_boundary(tf)
-
+    # The box with the predicate and the argument structure
     with st.container(border=True):
-        predicate = display_action_type_selector(st)
-        action_args = config.PREDICATES.get(predicate, [])
-        args = display_arguments(action_args)
+        predicate = utils.display_predicate_selector(st)
+        arguments = config.PREDICATES.get(predicate, [])
+        args = display_inputs(arguments)
         args = process_arguments(args)
+
+    # The box with the properties
+    with st.container(border=True):
+        properties = config.PROPERTIES
+        props = display_inputs(properties)
+        props = process_arguments(props)
     
+    # Now that we have our values we can update the annotation
     annotation = st.session_state.annotation
-    
-    # Now that we have an annotation we can update the contents given the inputs
     annotation.predicate = predicate
     annotation.arguments = args
-    annotation.tier = utils.calculate_tier(tf)
+    annotation.properties = props
+    annotation.calculate_tier(tf)
     
-    if DEBUG:
-        st.code(annotation.as_pretty_string(), language=None)
-
     with st.container(border=True):
-        #st.markdown(annotation.as_markdown())
         utils.display_annotation(annotation, add_settings)
         st.button("Add", on_click=annotation.save)
 

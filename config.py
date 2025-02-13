@@ -17,7 +17,7 @@ TITLE = "Action Annotator"
 DEFAULT_VIDEO_WIDTH = 50    # video width in percentage of total width
 DEFAULT_IMAGE_WIDTH = 100   # image width in pixels
 
-# Number of frames printed from the context. Theonly numbers that make sense
+# Number of frames printed from the context. The only numbers that make sense
 # here are from 3 to probably 6
 CONTEXT_SIZE = 5
 
@@ -26,14 +26,24 @@ CONTEXT_SIZE = 5
 FINE_TUNING_WINDOW = 0.5
 
 # The format used for the timepoints of the slider, other useful formats are
-# 'HH:mm:ss' (if you have a longer video), 'mm:ss.SSS' (if you want to show
-# milliseconds), or 'HH:mm:ss.SSS' (if you want both).
+# HH:mm:ss, mm:ss.SSS and HH:mm:ss.SSS, which add hours and/or milliseconds.
 SLIDER_TIME_FORMAT = 'mm:ss:SSS'
 
+# Needed when initializing the session state
+def create_object_pool():
+    return set()
 
+# These should be overruled by the task specific settings (other wise there would
+# be nothing to do). They define what kind of annotation inputs are required and
+# what kind of default values there are (the default dicitonary is a place holder
+# for functionality yet to be added).
+PREDICATES = {}
+PROPERTIES = []
+DEFAULTS = {}
 
-## Read task-specific settings so they can overrule what is in this file
+USE_TIERS = False
 
+## Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:
     user_settings = open(sys.argv[2]).read()
     exec(user_settings)
