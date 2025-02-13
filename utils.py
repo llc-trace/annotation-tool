@@ -260,33 +260,36 @@ def display_annotations(settings: dict):
         if anno is None:
             return None
         return Annotation().import_fields(anno)
-    tiers = [a.tier for a in st.session_state.annotations if a.tier]
-    tiers = list(sorted(set(tiers)))
-    groups = []
-    for tier in tiers:
-        group = {"id": tier, "content": tier.lower(), "style": "color: black;"}
-        group = {"id": tier, "content": tier.lower()}
-        groups.append(group)
-    height = (len(tiers) + 1) * 60
-    options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     with st.container(border=True):
         term = st.text_input('Search annotations')
         filtered_annotations = \
-           [a for a in reversed(st.session_state.annotations) if a.matches(term)]
+            [a for a in reversed(st.session_state.annotations) if a.matches(term)]
         if not settings['hide-timeline']:
-            timeline_items = get_timeline(filtered_annotations)
-            item = st_timeline(timeline_items, groups=groups, options=options)
-            #if st.button("What's the date doing there?"):
-            #    st.info(
-            #        "It is a timeline and by default it prints the date. The timeframe"
-            #        " of the entire video starts at the first second of that date.")
-            if item:
-                st.write(annotation_pp(item['annotation']))
-                #st.write(annotation_pp(item['annotation']).as_json())
+            display_annotations_timeline(filtered_annotations)
         if not settings['hide-table']:
-            rows = [a.as_row() for a in filtered_annotations]
-            df = pd.DataFrame(rows, columns=Annotation.columns())
-            st.table(df)
+            display_annotations_table(filtered_annotations)
+
+def display_annotations_timeline(annotations: list):
+    tiers = sorted(set([a.tier for a in annotations if a.tier]))
+    groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
+    # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 
+    # screen and the timeline at the bottom is 1.8 cm. The 42 is a mulitplier to get
+    # to a number of pixels.
+    height = ((len(tiers) * 1.3) + 1.8) * 42
+    options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
+    timeline_items = get_timeline(annotations)
+    item = st_timeline(timeline_items, groups=groups, options=options)
+    #if st.button("What's the date doing there?"):
+    #    st.info(
+    #        "It is a timeline and by default it prints the date. The timeframe"
+    #        " of the entire video starts at the first second of that date.")
+    if item:
+        st.write(annotation_pp(item['annotation']))
+        #st.write(annotation_pp(item['annotation']).as_json())
+
+def display_annotations_table(annotations: list):
+    rows = [a.as_row() for a in annotations]
+    st.table(pd.DataFrame(rows, columns=Annotation.columns()))
 
 def display_errors():
     for error in st.session_state.errors:
@@ -920,7 +923,9 @@ class Annotation:
         the properties (like the DPIP gesture annotation), (2) tasks where we do not
         care about tiers and (3) task that assume two tiers with the second to deal with
         overlapping actions (like the DPIP action annotation task)."""
-        if 'tier' in self.properties or config.USE_TIERS is False:
+        if 'tier' in self.properties:
+            pass
+        elif config.USE_TIERS is False:
             self.properties['tier'] = config.DEFAULT_TIER
         else:
             #print('---', tf)
