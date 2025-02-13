@@ -1,16 +1,23 @@
 """
 
-Bunch of settings for the DPIP Annotation Tool. A couple of these can be changed
-from the tool, but most need to be edited here if needed.
+Some general settings for the  Annotation Tool. A couple of these can be changed
+from the tool, some need to be edited here if needed.
+
+You need to hand in a secondconfig filewith settings for the annotation task.
 
 """
 
+import sys
+
+
 ## Settings purely for display reasons
+
+TITLE = "Action Annotator"
 
 DEFAULT_VIDEO_WIDTH = 50    # video width in percentage of total width
 DEFAULT_IMAGE_WIDTH = 100   # image width in pixels
 
-# Number of frames printed from the context. Theonly numbers that make sense
+# Number of frames printed from the context. The only numbers that make sense
 # here are from 3 to probably 6
 CONTEXT_SIZE = 5
 
@@ -19,49 +26,24 @@ CONTEXT_SIZE = 5
 FINE_TUNING_WINDOW = 0.5
 
 # The format used for the timepoints of the slider, other useful formats are
-# 'HH:mm:ss' (if you have a longer video), 'mm:ss.SSS' (if you want to show
-# milliseconds), or 'HH:mm:ss.SSS' (if you want both).
+# HH:mm:ss, mm:ss.SSS and HH:mm:ss.SSS, which add hours and/or milliseconds.
 SLIDER_TIME_FORMAT = 'mm:ss:SSS'
 
+# Needed when initializing the session state
+def create_object_pool():
+    return set()
 
-## Settings that refer to the content of the annotation
+# These should be overruled by the task specific settings (other wise there would
+# be nothing to do). They define what kind of annotation inputs are required and
+# what kind of default values there are (the default dicitonary is a place holder
+# for functionality yet to be added).
+PREDICATES = {}
+PROPERTIES = []
+DEFAULTS = {}
 
-PARTICIPANTS = ('Director1', 'Director2', 'Director3', 'Builder')
+USE_TIERS = False
 
-ACTION_TYPES = {
-    'PUT': ['Object', 'Location'],
-    'REMOVE': ['Object', 'Location'],
-    'MOVE': ['Object', 'Source', 'Destination'],
-    'TURN': ['Object'] }
-
-GESTURE_TYPES = {
-    'POINT': ['Direction'],
-    'PUSH-LEFT': [],
-    'PUSH-RIGHT': []}
-
-ABSOLUTE_LOCATIONS = ['Base', 'FirstLayerAboveBase', 'SecondLayerAboveBase', 'TopLayer']
-
-LOCATION_TYPES = ['Location', 'Source', 'Destination']
-
-# Mapping the argument types to strings that are displayed in the argument creation widget
-ARGUMENT_MAPPINGS = {
-    'Object': '**Object** (select a block)',
-    'Source': '**Source** (select a relation and location or specify manually)',
-    'Target': '**Target** (select a relation and location or specify manually)',
-    'Destination': '**Destination** (select a relation and location or specify manually)',
-    'Location': '**Location** (select a relation and location or specify manually)'}
-
-
-# Relations taken from the propositions document, first the name used here then the
-# name used in the document. All negations are ignored, the tool can use an extra
-# marker for that if needed.
-POSITIONAL_RELATIONS = {
-    'on': 'is on',
-    'left-of': 'is left of',
-    'right-of': 'is right of',
-    'behind': 'id behind',
-    'in-front-of': 'is in front of',
-    'above': 'is above',
-    'below': 'is below',
-    'touches':  'is touching'
-}
+## Loading the task-specific settings which overrule what is in this file
+if len(sys.argv) > 2:
+    user_settings = open(sys.argv[2]).read()
+    exec(user_settings)
