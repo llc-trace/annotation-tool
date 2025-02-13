@@ -740,11 +740,14 @@ class Frame:
 
 class Annotation:
 
-    """Annotations have four kinds of information:
+    """Instances of this class contain all information relevant to a particular
+    annotation. Annotations have four kinds of information:
+
     - start and end offsets (because they are interval annotations)
     - a predicate (could be None, but usually something like Put or Remove)
     - a dictionary with arguments for the predicate
     - a dictionary with any other properties
+
     """
 
     def __init__(self, identifier : str = None, video_path: str = None,
@@ -842,6 +845,10 @@ class Annotation:
                     'WARNING: the start of the interval cannot be before the end')
         properties_idx = { p['type']: p for p in config.PROPERTIES }
         for prop, value in self.properties.items():
+            # There is something iffy here with the tier property which can be in
+            # the properties, but does not need to be in the defined properties 
+            if prop not in properties_idx:
+                continue
             optional = properties_idx[prop].get('optional', False)
             if not value and not optional:
                 self.errors.append(f'WARNING: property "{prop}"" is not specified')
@@ -853,7 +860,7 @@ class Annotation:
         minutes and seconds from the start timepoint, it is not required to be
         unique."""
         try:
-            # TODO: this may be different for the gesture case if we don't use 
+            # TODO: this may be different for some tasks if we don't use 
             # 'predicate' for that field
             prefix = 'X' if self.predicate is None else self.predicate[0]
             tp = TimePoint(milliseconds=self.start)
@@ -914,7 +921,7 @@ class Annotation:
         care about tiers and (3) task that assume two tiers with the second to deal with
         overlapping actions (like the DPIP action annotation task)."""
         if 'tier' in self.properties or config.USE_TIERS is False:
-            pass
+            self.properties['tier'] = config.DEFAULT_TIER
         else:
             #print('---', tf)
             taken = current_timeframes()

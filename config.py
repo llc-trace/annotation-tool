@@ -41,7 +41,11 @@ PREDICATES = {}
 PROPERTIES = []
 DEFAULTS = {}
 
+# Some tasks don't care about tiers (aka annotation layers), but they exist
+# anyway so these settings make sure that all annotations are at least assigned
+# to a default tier.
 USE_TIERS = False
+DEFAULT_TIER = 'Default'
 
 ## Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:
