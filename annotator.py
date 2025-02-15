@@ -11,15 +11,13 @@ $ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG>
 
 """
 
-# TODO: update manual
-
 
 import json
 import time
 
 import streamlit as st
 
-import config
+from config import default as config
 import utils
 
 
@@ -143,7 +141,7 @@ if mode == 'show blocks':
 
 if mode == 'help':
 
-    with open('manual.md') as fh:
+    with open('docs/manual.md') as fh:
         st.markdown(fh.read())
 
 

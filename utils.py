@@ -20,7 +20,7 @@ import pandas as pd
 import streamlit as st
 import streamlit_timeline
 
-import config
+from config import default as config
 
 
 ## Streamlit utilities

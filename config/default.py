@@ -1,9 +1,9 @@
 """
 
-Some general settings for the  Annotation Tool. A couple of these can be changed
-from the tool, some need to be edited here if needed.
+Some general default settings for the  Annotation Tool. A couple of these can be
+changed from the tool, some need to be edited here if needed.
 
-You need to hand in a secondconfig filewith settings for the annotation task.
+You need to hand in a second config file with settings for the annotation task.
 
 """
 
