@@ -11,6 +11,8 @@ $ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG>
 
 """
 
+# TODO: update manual
+
 
 import json
 import time
@@ -51,66 +53,6 @@ if DEBUG:
     st.write(utils.session_options())
 
 
-def display_inputs(inputs: list):
-    inputs_dict = {}
-    if inputs:
-        args = [''] * len(inputs)
-        for i, arg in enumerate(inputs):
-            argtype = arg['type']
-            label = arg['label']
-            items = arg['items']
-            st.write(label)
-            args[i] = [None] * len(items)
-            cols = st.columns(len(items))
-            for j, item in enumerate(items):
-                if item == 'TEXT':
-                    with cols[j]:
-                        args[i][j] = utils.text(f'{i}:{j}-{argtype}')
-                elif isinstance(item, str):
-                    with cols[j]:
-                        args[i][j] = utils.text(f'{i}:{j}-{argtype}', item)
-                elif isinstance(item, list):
-                    item = import_session_objects(item)
-                    with cols[j]:
-                        args[i][j] = utils.box(f'{i}:{j}-{argtype}', item) 
-            inputs_dict[argtype] = args[i]
-    return inputs_dict
-
-
-def import_session_objects(options: list):
-    """Take the list of options intended for the selectbox and check for items that
-    need to be expanded. At the moment, the only target is the string that indicates
-    all blocks that are in play need to be inseted."""
-    expanded_list = []
-    for option in options:
-        if option == '**session_state:blocks**':
-            # sort the blocks because it is a set
-            expanded_list.extend(sorted(st.session_state.objects['inplay']))
-        else:
-            expanded_list.append(option)
-    return expanded_list
-
-
-def process_arguments(args):
-    """Pull the relevant values out of the return values from the widgets."""
-    # TODO: this now makes way too many assumptions, the config settings should
-    # include instructions on how to combine widget return values when there are
-    # more than one, for example, it should say something like "[#1(#2), #3]" to
-    # replace the assumption now built into the third case below.
-    processed_args = {}
-    for arg, val in args.items():
-        if len(val) == 1:
-            processed_args[arg] = val[0]
-        elif len(val) == 2:
-            processed_args[arg] = val[0] if val[0] is not None else val[1]
-        elif len(val) == 3:
-            if val[0] is not None and val[1] is not None:
-                processed_args[arg] = f'{val[0]}({val[1]})'
-            else:
-                processed_args[arg] = val[2]
-    return processed_args
-
-
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -132,26 +74,40 @@ if mode == 'add annotations':
     with st.container(border=True):
         predicate = utils.display_predicate_selector(st)
         arguments = config.PREDICATES.get(predicate, [])
-        args = display_inputs(arguments)
-        args = process_arguments(args)
+        args = utils.display_inputs(arguments)
+        args = utils.process_arguments(args)
 
-    # The box with the properties
-    with st.container(border=True):
-        properties = config.PROPERTIES
-        props = display_inputs(properties)
-        props = process_arguments(props)
-    
+    # The box with the properties. But don't show it until after predicate
+    # selection, which structures the annotation but also solved an issue
+    # with refreshing the properties after an annotation was saved.
+    if predicate:
+        with st.container(border=True):
+            properties = config.PROPERTIES
+            props = utils.display_inputs(properties)
+            props = utils.process_arguments(props)
+    else:
+        props = {}
+
     # Now that we have our values we can update the annotation
     annotation = st.session_state.annotation
     annotation.predicate = predicate
     annotation.arguments = args
     annotation.properties = props
     annotation.calculate_tier(tf)
-    
+
+    # Display the updated annotation with a save button or a warning    
     with st.container(border=True):
         utils.display_annotation(annotation, add_settings)
-        st.button("Add", on_click=annotation.save)
-
+    if annotation.is_valid():
+            st.button("Save Annotation", on_click=annotation.save)
+    else:
+        st.markdown(
+            "*Cannot add annotation yet because not all required fields have"
+            " been specified and/or not all values are legal.*")
+        show_issues = st.button("Show issues")
+        if show_issues:
+            for e in annotation.errors:
+                st.info(e)
     utils.display_errors()
 
 
@@ -195,8 +151,18 @@ if mode == 'dev':
 
     if dev['session_state']:
         with st.container(border=True):
+            st.markdown('**Session State**')
             st.write(st.session_state)
     if dev['log']:
         with open(st.session_state.io['log']) as fh:
             with st.container(border=True):
+                st.markdown('**Log contents**')
                 st.code(fh.read(), language=None)
+    if dev['predicate']:
+        with st.container(border=True):
+            st.markdown('**Predicate-argument specifications**')
+            st.write(config.PREDICATES)
+    if dev['properties']:
+        with st.container(border=True):
+            st.markdown('**Property specifications**')
+            st.write(config.PROPERTIES)

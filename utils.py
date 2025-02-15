@@ -19,7 +19,6 @@ import cv2
 import pandas as pd
 import streamlit as st
 import streamlit_timeline
-#from streamlit_timeline import st_timeline
 
 import config
 
@@ -136,9 +135,14 @@ def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
     dev_session = st.sidebar.checkbox('Show session_state', value=False)
     dev_log = st.sidebar.checkbox('Show log', value=False)
+    dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
+    dev_props = st.sidebar.checkbox('Show property specifications', value=False)
+    #dev_ = st.sidebar.checkbox('Show ', value=False)
     return {
         'session_state': dev_session,
         'log': dev_log,
+        'predicate': dev_pred,
+        'properties':dev_props
         }
 
 def display_video(video: 'Video', width, seconds):
@@ -246,6 +250,33 @@ def process_arguments(args):
             processed_args[arg] = val
     return processed_args
 
+def display_inputs(inputs: list):
+    # The inputs argument is a list of dictionaries, where each dictionary
+    # contains the specification for an argument or property.
+    inputs_dict = {}
+    if inputs:
+        args = [''] * len(inputs)
+        for i, arg in enumerate(inputs):
+            type = arg['type']
+            label = arg['label']
+            items = arg['items']
+            st.write(label)
+            args[i] = [None] * len(items)
+            cols = st.columns(len(items))
+            for j, item in enumerate(items):
+                if item == 'TEXT':
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{type}')
+                elif isinstance(item, str):
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{type}', item)
+                elif isinstance(item, list):
+                    item = import_session_objects(item)
+                    with cols[j]:
+                        args[i][j] = box(f'{i}:{j}-{type}', item) 
+            inputs_dict[type] = args[i]
+    return inputs_dict
+
 def display_annotation(annotation, show_options: dict):
     st.markdown('###### Current values')
     df = pd.DataFrame([annotation.as_row()], columns=annotation.columns())
@@ -264,7 +295,7 @@ def display_annotations(settings: dict):
         if not settings['hide-timeline']:
             display_annotations_timeline(filtered_annotations)
         if not settings['hide-table']:
-            display_annotations_table(filtered_annotations)
+            display_annotations_table(sorted(filtered_annotations))
 
 def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
@@ -498,6 +529,38 @@ def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
     if tf2.end <= tf1.start:
         return False
     return True
+
+def process_arguments(args: dict):
+    """Pull the relevant values out of the return values from the widgets."""
+    # TODO: this now makes way too many assumptions, the config settings should
+    # include instructions on how to combine widget return values when there are
+    # more than one, for example, it should say something like "[#1(#2), #3]" to
+    # replace the assumption now built into the third case below.
+    processed_args = {}
+    for arg, val in args.items():
+        if len(val) == 1:
+            processed_args[arg] = val[0]
+        elif len(val) == 2:
+            processed_args[arg] = val[0] if val[0] is not None else val[1]
+        elif len(val) == 3:
+            if val[0] is not None and val[1] is not None:
+                processed_args[arg] = f'{val[0]}({val[1]})'
+            else:
+                processed_args[arg] = val[2]
+    return processed_args
+
+def import_session_objects(options: list):
+    """Take the list of options intended for the selectbox and check for items that
+    need to be expanded. At the moment, the only target is the string that indicates
+    all blocks that are in play need to be inseted."""
+    expanded_list = []
+    for option in options:
+        if option == '**session_state:blocks**':
+            # sort the blocks because it is a set
+            expanded_list.extend(sorted(st.session_state.objects['inplay']))
+        else:
+            expanded_list.append(option)
+    return expanded_list
 
 
 class WindowCache:
@@ -745,6 +808,7 @@ class Frame:
         return self.timepoint.timestamp(short=short)
 
 
+@functools.total_ordering
 class Annotation:
 
     """Instances of this class contain all information relevant to a particular
@@ -767,11 +831,18 @@ class Annotation:
         self.arguments = arguments
         self.properties = properties
         self.errors = []
+        self.missing_fields = []
 
     def __str__(self):
         return (
             f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
             f' {self.as_formula()} {self.properties}')
+
+    def __eq__(self, other):
+        return self.start == other.start
+
+    def __lt__(self, other):
+        return self.start < other.start
 
     def assign_identifier(self):
         max_identifier = 0
@@ -835,21 +906,42 @@ class Annotation:
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
+        self.check_start_and_end()
+        self.check_predicate_and_arguments()
+        self.check_properties()
+        return True if not self.errors else False
+
+    def check_start_and_end(self):
+        """Check the start and end values of the annotation, add the the erros list
+        if any errors were found."""
         # TODO: add check for out of bounds start or end
+        errors = []
         if self.start is None:
             self.errors.append(f'WARNING: the start position is not specified')
         if self.end is None:
             self.errors.append(f'WARNING: the end position is not specified')
-        if self.predicate is None:
-            self.errors.append(f'WARNING: the predicate is not specified')
-        for arg_name, arg_value in self.arguments.items():
-            if not arg_value:
-                self.errors.append(
-                    f'WARNING: required argument "{arg_name}" is not specified')
         if self.start is not None and self.end is not None:
             if self.start > self.end:
                 self.errors.append(
                     'WARNING: the start of the interval cannot be before the end')
+
+    def check_predicate_and_arguments(self):
+        """ Check the predicate and its arguments, add the the erros list
+        if any errors were found."""
+        if self.predicate is None:
+            self.errors.append(f'WARNING: the predicate is not specified')
+        if self.predicate:
+            argument_specifications = config.PREDICATES.get(self.predicate, {})
+            arguments_idx = { a['type']: a for a in argument_specifications }
+            for arg_name, arg_value in self.arguments.items():
+                optional = arguments_idx[arg_name].get('optional', False)
+                if not arg_value and not optional:
+                    self.errors.append(
+                        f'WARNING: required argument "{arg_name}" is not specified')
+
+    def check_properties(self):
+        """Check the properties dictionary of the annotation, add the the erros list
+        if any errors were found."""
         properties_idx = { p['type']: p for p in config.PROPERTIES }
         for prop, value in self.properties.items():
             # There is something iffy here with the tier property which can be in
@@ -859,8 +951,7 @@ class Annotation:
             optional = properties_idx[prop].get('optional', False)
             if not value and not optional:
                 self.errors.append(f'WARNING: property "{prop}"" is not specified')
-        return True if not self.errors else False
-
+   
     def elan_identifier(self):
         """Cobble together an Elan "identifier" from the identifier and the start
         time. The elan identifier is more like a summary, using a prefix plus the

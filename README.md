@@ -1,4 +1,4 @@
-# DPIP Annotation Tool
+# Annotation Tool
 
 Tool for annotating actions and gestures.
 
