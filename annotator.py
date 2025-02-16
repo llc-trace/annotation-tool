@@ -72,7 +72,7 @@ if mode == 'add annotations':
     with st.container(border=True):
         predicate = utils.display_predicate_selector(st)
         arguments = config.PREDICATES.get(predicate, [])
-        args = utils.display_inputs(arguments)
+        args = utils.display_inputs(predicate, arguments)
         args = utils.process_arguments(args)
 
     # The box with the properties. But don't show it until after predicate
@@ -81,7 +81,7 @@ if mode == 'add annotations':
     if predicate:
         with st.container(border=True):
             properties = config.PROPERTIES
-            props = utils.display_inputs(properties)
+            props = utils.display_inputs(None, properties)
             props = utils.process_arguments(props)
     else:
         props = {}
@@ -124,14 +124,16 @@ if mode == 'show annotations':
     utils.display_annotations(list_settings)
 
 
-if mode == 'show blocks':
+if mode == 'show object pool':
 
     st.title('Blocks')
     st.text("Add blocks into play from the pool or remove them and put them back into the pool")
     messages = []
     c1, c2, _ = st.columns([4, 2, 6])
-    block_to_add = utils.display_add_block_select(c1)
-    c2.button("Add", on_click=utils.action_add_block, args=[block_to_add])
+    #block_to_add = utils.display_add_block_select(c1)
+    blocks_to_add = utils.display_add_block_select(c1)
+    #c2.button("Add", on_click=utils.action_add_block, args=[block_to_add])
+    c2.button("Add", on_click=utils.action_add_blocks, args=[blocks_to_add])
     c3, c4, _ = st.columns([4, 2, 6])
     block_to_remove = utils.display_remove_block_select(c3)
     c4.button("Remove", on_click=utils.action_remove_block, args=[block_to_remove])
@@ -141,12 +143,14 @@ if mode == 'show blocks':
 
 if mode == 'help':
 
-    with open('docs/manual.md') as fh:
-        st.markdown(fh.read())
+    st.title('Annotation tool help')
+    url = 'https://github.com/llc-trace/annotation-tool/blob/main/manual.md'
+    st.markdown(f'For help see the manual at [{url}]({url}).')
 
 
 if mode == 'dev':
 
+    st.title('Developer goodies')
     if dev['session_state']:
         with st.container(border=True):
             st.markdown('**Session State**')

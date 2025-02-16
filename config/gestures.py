@@ -29,7 +29,7 @@ PREDICATES = {
 
 PROPERTIES = [
 
-    {'type': 'comment', 'label': '**Comment**', 'items': ['TEXT'], 'optional': True}
+    {'type': 'comment', 'label': '**Comment (optional)**', 'items': ['TEXT'], 'optional': True}
 ]
 
 DEFAULT_TIER = 'Gestures'

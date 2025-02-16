@@ -35,5 +35,5 @@ PREDICATES = {
 PROPERTIES = [
 
     {'type': 'tier', 'label': '**Tier**', 'items': [TIERS]},
-    {'type': 'comment', 'label': '**Comment**', 'items': ['TEXT'], 'optional': True}
+    {'type': 'comment', 'label': '**Comment (optional)**', 'items': ['TEXT'], 'optional': True}
 ]

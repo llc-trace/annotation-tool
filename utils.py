@@ -70,16 +70,17 @@ def session_options():
     return options
 
 def sidebar_display_info():
-    text = (
-        f'Blocks: {len(st.session_state.objects["inplay"])}\n'
-        + f'Annotations: {len(st.session_state.annotations)}')
+    #text = (
+    #    f'Blocks: {len(st.session_state.objects["inplay"])}\n'
+    #    + f'Annotations: {len(st.session_state.annotations)}')
+    text = f'Annotations: {len(st.session_state.annotations)}'
     st.sidebar.code(text, language='yaml')
 
 def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
     return st.sidebar.radio(
         "Tool mode",
-        ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
+        ['add annotations', 'show annotations', 'show object pool', 'help', 'dev'],
         key='opt_mode', index=0,
         label_visibility='collapsed')
 
@@ -250,10 +251,14 @@ def process_arguments(args):
             processed_args[arg] = val
     return processed_args
 
-def display_inputs(inputs: list):
+def display_inputs(predicate: str, inputs: list):
     # The inputs argument is a list of dictionaries, where each dictionary
     # contains the specification for an argument or property.
     inputs_dict = {}
+    if predicate is not None:
+        descriptions = [input_signature(d) for d in inputs]
+        d = f'{predicate} ( {", ".join(descriptions)})'
+        st.info(d)
     if inputs:
         args = [''] * len(inputs)
         for i, arg in enumerate(inputs):
@@ -349,10 +354,14 @@ def display_predicate_selector(column, key='action_type'):
 def display_add_block_select(column):
     """Displays a selectbox for selecting a block from the pool and returns what
     the selectbox returns."""
-    return column.selectbox(
+    return column.multiselect(
         'Add object from pool',
         [None] + sorted(st.session_state.objects['pool']),
         label_visibility='collapsed')
+    #return column.selectbox(
+    #    'Add object from pool',
+    #    [None] + sorted(st.session_state.objects['pool']),
+    #    label_visibility='collapsed')
 
 def display_remove_block_select(column):
     """Displays a selectbox for removing a block from the pool and returns what
@@ -383,6 +392,10 @@ def action_add_block(block: str):
     message = f'Added {block} and removed it from the pool'
     st.session_state.messages.append(message)
     log(message)
+
+def action_add_blocks(blocks: list):
+    for block in blocks:
+        action_add_block(block)
 
 def action_remove_block(block: str):
     remove_block(block)
@@ -561,6 +574,11 @@ def import_session_objects(options: list):
         else:
             expanded_list.append(option)
     return expanded_list
+
+def input_signature(input_description: dict):
+    optionality_marker = '?' if input_description.get('optional') else ''
+    return f'{input_description["type"]}{optionality_marker}'
+
 
 
 class WindowCache:
