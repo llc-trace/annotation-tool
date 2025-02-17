@@ -1,6 +1,6 @@
 """
 
-Utilities for the DPIP annotators
+Utilities for the annotator
 
 """
 
@@ -18,13 +18,21 @@ from copy import deepcopy
 import cv2
 import pandas as pd
 import streamlit as st
-from streamlit_timeline import st_timeline
+import streamlit_timeline
 
-import config
+from config import default as config
 
 
 ## Streamlit utilities
 ## ----------------------------------------------------------------------------
+
+def text(key, value=None):
+    return st.text_input(
+        "dummy", key=key, value=value, label_visibility='collapsed')
+
+def box(key, options):
+    return st.selectbox(
+        "dummy", [None] + options, key=key, label_visibility='collapsed')
 
 def intialize_session_state():
     video_path = get_video_location_from_command_line()
@@ -41,10 +49,12 @@ def intialize_session_state():
         log(f'Loaded video at {video_path}')
     if not 'objects' in st.session_state:
         st.session_state.objects = {
-            'pool': create_object_pool(),
+            'pool': config.create_object_pool(),
             'inplay': set() }
     if not 'annotations' in st.session_state:
         load_annotations()
+    if 'annotation' not in st.session_state:
+        st.session_state.annotation = Annotation()
     if not 'windows' in st.session_state:
         st.session_state.windows = WindowCache()
     if not 'errors' in st.session_state:
@@ -60,17 +70,18 @@ def session_options():
     return options
 
 def sidebar_display_info():
-    text = (
-        f'Blocks: {len(st.session_state.objects["inplay"])}\n'
-        + f'Annotations: {len(st.session_state.annotations)}')
+    #text = (
+    #    f'Blocks: {len(st.session_state.objects["inplay"])}\n'
+    #    + f'Annotations: {len(st.session_state.annotations)}')
+    text = f'Annotations: {len(st.session_state.annotations)}'
     st.sidebar.code(text, language='yaml')
 
 def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
     return st.sidebar.radio(
         "Tool mode",
-        ['add annotations', 'show annotations', 'show blocks', 'help', 'dev'],
-        key='opt_mode', index=1,
+        ['add annotations', 'show annotations', 'show object pool', 'help', 'dev'],
+        key='opt_mode', index=0,
         label_visibility='collapsed')
 
 def sidebar_display_video_controls():
@@ -111,8 +122,8 @@ def sidebar_display_annotation_controls():
 
 def sidebar_display_annotation_list_controls():
     st.sidebar.header('Annotation list controls', divider=True)
-    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video')
-    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls')
+    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video', value=True)
+    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls', value=True)
     timeline = st.sidebar.checkbox('Hide timeline',  key='opt_list_hide_timeline')
     table = st.sidebar.checkbox('Hide table',  key='opt_list_hide_table')
     return {
@@ -125,9 +136,14 @@ def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
     dev_session = st.sidebar.checkbox('Show session_state', value=False)
     dev_log = st.sidebar.checkbox('Show log', value=False)
+    dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
+    dev_props = st.sidebar.checkbox('Show property specifications', value=False)
+    #dev_ = st.sidebar.checkbox('Show ', value=False)
     return {
         'session_state': dev_session,
         'log': dev_log,
+        'predicate': dev_pred,
+        'properties':dev_props
         }
 
 def display_video(video: 'Video', width, seconds):
@@ -161,10 +177,11 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
         first_frames = tf.slice_to_right(tp.in_milliseconds(), n=5, step=1000)
         header = 'Window of nine frames around the selected start point or end point'
         display_frames(st, left_context + first_frames, header=header)
-    box = st.container(border=True)
-    return box.slider(
-        create_label(label), d - margin, d + margin,
-        value=d, format=config.SLIDER_TIME_FORMAT, step=step)
+    with st.container(border=False):
+        _, col, _ = st.columns([1,30,1])
+        return col.slider(
+            create_label(label), d - margin, d + margin,
+            value=d, format=config.SLIDER_TIME_FORMAT, step=step)
 
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
@@ -197,15 +214,15 @@ def add_frames_to_cache(timeframe, ms, step):
 
 def display_sliding_window(column, frames, tp, header=None):
     """Display frames horizontally in a box."""
-    box = column.container(border=True)
-    if header is not None:
-        box.write(header)
-    cols = box.columns(len(frames))
-    for i, frame in enumerate(frames):
-        is_focus = False
-        if tp.in_milliseconds() == frame.timepoint.in_milliseconds():
-            is_focus = True
-        display_frame(cols[i], frame, focus=is_focus)
+    with column.container(border=False):
+        if header is not None:
+            column.write(header)
+        cols = column.columns(len(frames))
+        for i, frame in enumerate(frames):
+            is_focus = False
+            if tp.in_milliseconds() == frame.timepoint.in_milliseconds():
+                is_focus = True
+            display_frame(cols[i], frame, focus=is_focus)
 
 def display_frames(column, frames, header=None):
     """Display frames horizontally in a box."""
@@ -219,41 +236,6 @@ def display_frames(column, frames, header=None):
 def display_frame(column, frame, focus=False):
     caption = f'✔︎' if focus else frame.caption()
     column.image(frame.image, channels="BGR", caption=caption)
-    
-def display_arguments(arguments: list):
-    arg_dict = {}
-    if arguments:
-        cols = st.columns(len(arguments))
-        args = [''] * len(arguments)
-        blocks = list(sorted(st.session_state.objects['inplay']))
-        locations = config.ABSOLUTE_LOCATIONS
-        relations = list(config.POSITIONAL_RELATIONS.keys())
-        for i, arg in enumerate(arguments):
-            st.write(config.ARGUMENT_MAPPINGS.get(arg, arg))
-            if arg == 'Object':
-                args[i] = st.selectbox(arg, [None] + blocks, label_visibility='collapsed')
-            elif arg in config.LOCATION_TYPES:
-                args[i] = location_picker(arg, blocks, locations, relations)
-            else:
-                args[i] = st.text_input(arg)
-            arg_dict[arg] = args[i]
-    return arg_dict
-
-def location_picker(arg, blocks, locations, relations):
-    def box(label, options, key):
-        return st.selectbox(label, options, key=key, label_visibility='collapsed')
-    def text(label, key):
-        return st.text_input(label, key=key, label_visibility='collapsed')
-    loc_selections = [None] + blocks + locations
-    rel_selections = [None] + relations
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        rel = box(f'rel-{arg}', rel_selections, key=f'rel-{arg}')
-    with c2:
-        loc = box(f'loc-{arg}', loc_selections, key=f'loc-{arg}')
-    with c3:
-        txt = text(f'free-{arg}', key=f'free-{arg}')
-    return {'rel': rel, 'loc': loc, 'txt': txt}
 
 def process_arguments(args):
     processed_args = {}
@@ -269,8 +251,39 @@ def process_arguments(args):
             processed_args[arg] = val
     return processed_args
 
+def display_inputs(predicate: str, inputs: list):
+    # The inputs argument is a list of dictionaries, where each dictionary
+    # contains the specification for an argument or property.
+    inputs_dict = {}
+    if predicate is not None:
+        descriptions = [input_signature(d) for d in inputs]
+        d = f'{predicate} ( {", ".join(descriptions)})'
+        st.info(d)
+    if inputs:
+        args = [''] * len(inputs)
+        for i, arg in enumerate(inputs):
+            type = arg['type']
+            label = arg['label']
+            items = arg['items']
+            st.write(label)
+            args[i] = [None] * len(items)
+            cols = st.columns(len(items))
+            for j, item in enumerate(items):
+                if item == 'TEXT':
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{type}')
+                elif isinstance(item, str):
+                    with cols[j]:
+                        args[i][j] = text(f'{i}:{j}-{type}', item)
+                elif isinstance(item, list):
+                    item = import_session_objects(item)
+                    with cols[j]:
+                        args[i][j] = box(f'{i}:{j}-{type}', item) 
+            inputs_dict[type] = args[i]
+    return inputs_dict
+
 def display_annotation(annotation, show_options: dict):
-    st.info('Current annotation')
+    st.markdown('###### Current values')
     df = pd.DataFrame([annotation.as_row()], columns=annotation.columns())
     st.table(df)
     if show_options['elan']:
@@ -280,28 +293,43 @@ def display_annotation(annotation, show_options: dict):
             st.json(annotation.as_json())
 
 def display_annotations(settings: dict):
+    with st.container(border=True):
+        term = st.text_input('Search annotations')
+        filtered_annotations = \
+            [a for a in reversed(st.session_state.annotations) if a.matches(term)]
+        if not settings['hide-timeline']:
+            display_annotations_timeline(filtered_annotations)
+        if not settings['hide-table']:
+            display_annotations_table(sorted(filtered_annotations))
+
+def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
         if anno is None:
             return None
-        return ActionAnnotation().import_fields(anno)
-    groups = [
-        {"id": "ACTION1", "content": "action1", "style": "color: black;"},
-        {"id": "ACTION2", "content": "action2", "style": "color: black;"}]
-    options = { "selectable": True, "zoomable": True, "stack": False, "height": 200, }
-    with st.container(border=True):
-        #st.text('All annotations, using order of creation from last to first')
-        term = st.text_input('Search annotations')
-        filtered_annotations = \
-           [a for a in reversed(st.session_state.annotations) if a.matches(term)]
-        if not settings['hide-timeline']:
-            timeline_items = get_timeline(filtered_annotations)
-            item = st_timeline(timeline_items, groups=groups, options=options)
-            if item:
-                st.write(annotation_pp(item['annotation']))
-        if not settings['hide-table']:
-            rows = [a.as_row() for a in filtered_annotations]
-            df = pd.DataFrame(rows, columns=ActionAnnotation.columns())
-            st.table(df)
+        return Annotation().import_fields(anno)
+    tiers = sorted(set([a.tier for a in annotations if a.tier]))
+    groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
+    # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 
+    # screen and the timeline at the bottom is 1.8 cm. The 42 is a mulitplier to get
+    # to a number of pixels.
+    height = ((len(tiers) * 1.3) + 1.8) * 42
+    options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
+    timeline_items = get_timeline(annotations)
+    try:
+        item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
+        #if st.button("What's the date doing there?"):
+        #    st.info(
+        #        "It is a timeline and by default it prints the date. The timeframe"
+        #        " of the entire video starts at the first second of that date.")
+        if item:
+            st.write(annotation_pp(item['annotation']))
+            #st.write(annotation_pp(item['annotation']).as_json())
+    except:
+        pass
+
+def display_annotations_table(annotations: list):
+    rows = [a.as_row() for a in annotations]
+    st.table(pd.DataFrame(rows, columns=Annotation.columns()))
 
 def display_errors():
     for error in st.session_state.errors:
@@ -319,17 +347,21 @@ def display_available_blocks():
     with st.container(border=True):
         st.text('\n'.join(blocks))
 
-def display_action_type_selector(column, key='action_type'):
-    label = create_label('Select action type')
-    return st.pills(label, config.ACTION_TYPES, key=key)
+def display_predicate_selector(column, key='action_type'):
+    label = create_label('Select predicate')
+    return st.pills(label, config.PREDICATES.keys(), key=key)
 
 def display_add_block_select(column):
     """Displays a selectbox for selecting a block from the pool and returns what
     the selectbox returns."""
-    return column.selectbox(
+    return column.multiselect(
         'Add object from pool',
         [None] + sorted(st.session_state.objects['pool']),
         label_visibility='collapsed')
+    #return column.selectbox(
+    #    'Add object from pool',
+    #    [None] + sorted(st.session_state.objects['pool']),
+    #    label_visibility='collapsed')
 
 def display_remove_block_select(column):
     """Displays a selectbox for removing a block from the pool and returns what
@@ -360,6 +392,10 @@ def action_add_block(block: str):
     message = f'Added {block} and removed it from the pool'
     st.session_state.messages.append(message)
     log(message)
+
+def action_add_blocks(blocks: list):
+    for block in blocks:
+        action_add_block(block)
 
 def action_remove_block(block: str):
     remove_block(block)
@@ -444,13 +480,13 @@ def load_annotations():
                 timeframe = TimeFrame(
                     start=TimePoint(milliseconds=raw_annotation['start']),
                     end=TimePoint(milliseconds=raw_annotation['end']))
-                annotation = ActionAnnotation(
+                annotation = Annotation(
                     identifier=raw_annotation['identifier'],
-                    tier=raw_annotation['tier'],
                     video_path=video_path,
                     timeframe=timeframe,
-                    predicate=raw_annotation['action'],
-                    arguments=raw_annotation['arguments'] )
+                    predicate=raw_annotation['predicate'],
+                    arguments=raw_annotation['arguments'],
+                    properties=raw_annotation.get('properties', {}) )
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -494,29 +530,9 @@ def create_label(text: str, size='normalsize'):
     for sizes use the ones defined by LaTeX (small, large, Large, etcetera)."""
     return r"$\textsf{" + f'\\{size} {text}' + "}$"
 
-def create_object_pool():
-    pool = []
-    for size in ('Large', 'Small'):
-        for color in ('Green', 'Red', 'Blue', 'Yellow'):
-            for identifier in range(1, 7):
-                pool.append(f'{size}{color}Block{identifier}')
-    return set(pool)
-
 def current_timeframes():
     """Returns all timeframes of all the current annotations."""
     return [annotation.timeframe for annotation in st.session_state.annotations]
-
-def calculate_tier(tf: 'TimeFrame'):
-    """Calculate the tier for an annotation based on overlap. This is   only relevant
-    for action annotations and assumes there are only two tiers."""
-    # TODO: this seems a bit haphazard
-    taken = current_timeframes()
-    #for tf in taken: st.write(tf)
-    for taken_tf in taken:
-        #print('   ', taken_tf, overlap(tf, taken_tf))
-        if overlap(tf, taken_tf):
-            return 'ACTION2'
-    return 'ACTION1'
 
 def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
     """Return True if two time frames overlap, False otherwise."""
@@ -526,6 +542,43 @@ def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
     if tf2.end <= tf1.start:
         return False
     return True
+
+def process_arguments(args: dict):
+    """Pull the relevant values out of the return values from the widgets."""
+    # TODO: this now makes way too many assumptions, the config settings should
+    # include instructions on how to combine widget return values when there are
+    # more than one, for example, it should say something like "[#1(#2), #3]" to
+    # replace the assumption now built into the third case below.
+    processed_args = {}
+    for arg, val in args.items():
+        if len(val) == 1:
+            processed_args[arg] = val[0]
+        elif len(val) == 2:
+            processed_args[arg] = val[0] if val[0] is not None else val[1]
+        elif len(val) == 3:
+            if val[0] is not None and val[1] is not None:
+                processed_args[arg] = f'{val[0]}({val[1]})'
+            else:
+                processed_args[arg] = val[2]
+    return processed_args
+
+def import_session_objects(options: list):
+    """Take the list of options intended for the selectbox and check for items that
+    need to be expanded. At the moment, the only target is the string that indicates
+    all blocks that are in play need to be inseted."""
+    expanded_list = []
+    for option in options:
+        if option == '**session_state:blocks**':
+            # sort the blocks because it is a set
+            expanded_list.extend(sorted(st.session_state.objects['inplay']))
+        else:
+            expanded_list.append(option)
+    return expanded_list
+
+def input_signature(input_description: dict):
+    optionality_marker = '?' if input_description.get('optional') else ''
+    return f'{input_description["type"]}{optionality_marker}'
+
 
 
 class WindowCache:
@@ -773,33 +826,53 @@ class Frame:
         return self.timepoint.timestamp(short=short)
 
 
+@functools.total_ordering
 class Annotation:
 
-    """Annotations have types (action or gesture) and predicates (for example, for
-    actions we have put and remove). In addition, annotations are intervals so they
-    have start and end offsets."""
+    """Instances of this class contain all information relevant to a particular
+    annotation. Annotations have four kinds of information:
+
+    - start and end offsets (because they are interval annotations)
+    - a predicate (could be None, but usually something like Put or Remove)
+    - a dictionary with arguments for the predicate
+    - a dictionary with any other properties
+
+    """
 
     def __init__(self, identifier : str = None, video_path: str = None,
-                 timeframe: TimeFrame = None, participant: str = None,
-                 predicate: str = None, arguments: dict = {}, tier: str = None):
+                 timeframe: TimeFrame = None, properties: dict= {},
+                 predicate: str = None, arguments: dict = {}):
         self.identifier = identifier
         self.video_path = video_path
         self.timeframe = TimeFrame() if timeframe is None else timeframe
-        self.participant = participant
         self.predicate = predicate
         self.arguments = arguments
-        self.tier = tier
+        self.properties = properties
         self.errors = []
+        self.missing_fields = []
 
     def __str__(self):
         return (
             f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
-            f' {self.participant} {self.as_formula()})')
+            f' {self.as_formula()} {self.properties}')
+
+    def __eq__(self, other):
+        return self.start == other.start
+
+    def __lt__(self, other):
+        return self.start < other.start
+
+    def assign_identifier(self):
+        max_identifier = 0
+        for annotation in st.session_state.annotations:
+            max_identifier = max(max_identifier, int(annotation.identifier[1:]))
+        self.identifier = f'a{max_identifier+1:04d}'
 
     def import_fields(self, annotation: dict):
-        # TODO: should we just do all what is in the dictionary?
-        for attr in ('identifier', 'tier', 'participant', 'arguments'):
-            setattr(self, attr, annotation[attr])
+        self.identifier = annotation['identifier']
+        self.properties = annotation['properties']
+        self.predicate = annotation['predicate']
+        self.arguments = annotation['arguments']
         tp1 = TimePoint(milliseconds=annotation['start'])
         tp2 = TimePoint(milliseconds=annotation['end'])
         self.timeframe = TimeFrame(start=tp1, end=tp2)
@@ -807,11 +880,19 @@ class Annotation:
 
     @classmethod
     def columns(cls):
-        return []
+        return ['id', 'name', 'start', 'end', 'predicate', 'properties']
 
     @property
     def name(self):
         return self.elan_identifier()
+
+    @property
+    def tier(self):
+        return self.properties.get('tier')
+
+    @tier.setter
+    def tier(self, value):
+        self.properties['tier'] = value
 
     @property
     def start(self):
@@ -827,38 +908,75 @@ class Annotation:
     
     def matches(self, term: str):
         """Returns True if the search term occurs in the identifier, name or formula."""
-        # TODO: maybe add participant and tier?
-        if term in self.name or term in self.identifier:
+        # TODO: should lower case everything
+        term = term.lower()
+        if term in self.name.lower() or term in self.identifier.lower():
             return True
-        return term in self.as_formula()
+        if term in self.as_formula().lower():
+            return True
+        for prop, val in self.properties.items():
+            if prop is not None and term in prop.lower():
+                return True
+            if val is not None and term in val.lower():
+                return True
+        return False
 
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
+        self.check_start_and_end()
+        self.check_predicate_and_arguments()
+        self.check_properties()
+        return True if not self.errors else False
+
+    def check_start_and_end(self):
+        """Check the start and end values of the annotation, add the the erros list
+        if any errors were found."""
         # TODO: add check for out of bounds start or end
+        errors = []
         if self.start is None:
-            self.errors.append(f'WARNING: start position is not specified')
+            self.errors.append(f'WARNING: the start position is not specified')
         if self.end is None:
-            self.errors.append(f'WARNING: end position is not specified')
-        if self.predicate is None:
-            self.errors.append(f'WARNING: {self.annotation_type()} type is not specified')
-        for arg_name, arg_value in self.arguments.items():
-            if not arg_value:
-                self.errors.append(
-                    f'WARNING: required argument "{arg_name}" is not specified')
+            self.errors.append(f'WARNING: the end position is not specified')
         if self.start is not None and self.end is not None:
             if self.start > self.end:
                 self.errors.append(
                     'WARNING: the start of the interval cannot be before the end')
-        return True if not self.errors else False
 
+    def check_predicate_and_arguments(self):
+        """ Check the predicate and its arguments, add the the erros list
+        if any errors were found."""
+        if self.predicate is None:
+            self.errors.append(f'WARNING: the predicate is not specified')
+        if self.predicate:
+            argument_specifications = config.PREDICATES.get(self.predicate, {})
+            arguments_idx = { a['type']: a for a in argument_specifications }
+            for arg_name, arg_value in self.arguments.items():
+                optional = arguments_idx[arg_name].get('optional', False)
+                if not arg_value and not optional:
+                    self.errors.append(
+                        f'WARNING: required argument "{arg_name}" is not specified')
+
+    def check_properties(self):
+        """Check the properties dictionary of the annotation, add the the erros list
+        if any errors were found."""
+        properties_idx = { p['type']: p for p in config.PROPERTIES }
+        for prop, value in self.properties.items():
+            # There is something iffy here with the tier property which can be in
+            # the properties, but does not need to be in the defined properties 
+            if prop not in properties_idx:
+                continue
+            optional = properties_idx[prop].get('optional', False)
+            if not value and not optional:
+                self.errors.append(f'WARNING: property "{prop}"" is not specified')
+   
     def elan_identifier(self):
         """Cobble together an Elan "identifier" from the identifier and the start
         time. The elan identifier is more like a summary, using a prefix plus the
         minutes and seconds from the start timepoint, it is not required to be
         unique."""
         try:
-            # TODO: this may be different for the gesture case if we don't use 
+            # TODO: this may be different for some tasks if we don't use 
             # 'predicate' for that field
             prefix = 'X' if self.predicate is None else self.predicate[0]
             tp = TimePoint(milliseconds=self.start)
@@ -875,36 +993,28 @@ class Annotation:
         return {
             'identifier': self.identifier,
             'name': self.name,
-            'tier': self.tier,
             'start': self.start,
             'end': self.end,
-            'participant': self.participant,
             'predicate': self.predicate,
-            'arguments': self.arguments
-        }
+            'arguments': self.arguments,
+            'properties': self.properties }
 
     def as_elan(self):
         start = f'{self.start/1000:.3f}' if self.start else 'None'
         end = f'{self.end/1000:.3f}' if self.end else 'None'
-        #offsets = f'{self.start/1000:.3f}\t{self.end/1000:.3f}'
         offsets = f'{start}\t{end}'
         return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
-        return [self.identifier, self.name, self.tier,
+        return [self.identifier, self.name,
                 self.start_as_string(), self.end_as_string(),
-                self.participant, self.as_formula()]
+                self.as_formula(), str(self.properties)]
 
     def as_markdown(self):
         return (
             f'**[{self.start} {self.start_as_string()} : {self.end}]** '
             f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
             f'Formula ⟶ {self.as_formula()}')
-
-    def as_pretty_string(self):
-        return (f'{self.identifier} {self.name} {self.tier} '
-                + f'{self.start_as_string()} {self.end_as_string()} {self.participant}\n'
-                + f'{self.predicate} {self.as_formula()}')
 
     def start_as_string(self):
         return self.point_as_string(self.start)
@@ -919,15 +1029,37 @@ class Annotation:
         t = TimePoint(milliseconds=ms)
         return f'{t.mm()}:{t.ss()}.{t.mmm()}'
 
+    def calculate_tier(self, tf: TimeFrame):
+        """Calculate the tier for an annotation based on overlap. This is only relevant
+        for those annotations where we want to map to an ELAN annotation, which requires
+        tiers. There are three cases: (1) tasks where the tier is defined with one of
+        the properties (like the DPIP gesture annotation), (2) tasks where we do not
+        care about tiers and (3) task that assume two tiers with the second to deal with
+        overlapping actions (like the DPIP action annotation task)."""
+        if 'tier' in self.properties:
+            pass
+        elif config.USE_TIERS is False:
+            self.properties['tier'] = config.DEFAULT_TIER
+        else:
+            #print('---', tf)
+            taken = current_timeframes()
+            for taken_tf in taken:
+                #print('   ', taken_tf, overlap(tf, taken_tf))
+                if overlap(tf, taken_tf):
+                    #print('... overlap found with', taken_tf)
+                    self.properties['tier'] = 'ACTION2'
+                    return
+            #print('... no overlap found')
+            self.properties['tier'] = 'ACTION1'
+
     def copy(self):
         return Annotation(
             identifier=self.identifier,
-            tier=self.tier,
             video_path=self.video_path,
-            participant=self.participant,
-            predicate=self.predicate,
             timeframe=self.timeframe.copy(),
-            arguments=deepcopy(self.arguments))
+            predicate=self.predicate,
+            arguments=deepcopy(self.arguments),
+            properties=deepcopy(self.properties))
 
     def save(self):
         if self.is_valid():
@@ -943,57 +1075,6 @@ class Annotation:
             log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
         st.session_state.opt_show_boundary = False
-        st.session_state.annotation = ActionAnnotation()
+        st.session_state.annotation = Annotation()
         for error in self.errors:
             log(error)
-
-
-class GestureAnnotation(Annotation):
-
-    identifier = 0
-
-    def __init__(self, video_path: str, start: int, end: int,
-                 participant: str, subtype: str, arguments: list):
-        self.identifier = self.get_identifier()
-        super().__init__(
-            video_path=video_path, start=start, end=end,
-            participant=participant, subtype=subtype, arguments=arguments)
-
-    @staticmethod
-    def annotation_type():
-        return 'Gesture'
-
-    def get_identifier(self):
-        self.__class__.identifier += 1
-        return f'g{self.__class__.identifier:04d}'
-
-
-class ActionAnnotation(Annotation):
-
-    # TODO: we now get gaps when we fail to add an annotation, maybe assign
-    # identifier when we add the annotation (after testing for validity), or
-    # else go back to using an identifier created from a timestamp.
-
-    identifier = 1
-
-    def __init__(self, identifier: str = None, video_path: str = None,
-                 timeframe: TimeFrame = None, predicate: str = None,
-                 arguments: list = {}, tier: str = None):
-        super().__init__(
-            identifier=identifier, video_path=video_path, timeframe=timeframe,
-            participant='Builder', predicate=predicate, arguments=arguments,
-            tier=tier)
-
-    @classmethod
-    def columns(cls):
-        return ['id', 'name', 'tier', 'start', 'end', 'participant', 'predicate']
-
-    @staticmethod
-    def annotation_type():
-        return 'Action'
-
-    def assign_identifier(self):
-        max_identifier = 0
-        for annotation in st.session_state.annotations:
-            max_identifier = max(max_identifier, int(annotation.identifier[1:]))
-        self.identifier = f'a{max_identifier+1:04d}'
