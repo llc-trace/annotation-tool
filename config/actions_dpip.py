@@ -9,16 +9,17 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Action Annotator"
 
-def create_object_pool():
-    pool = []
-    for size in ('Large', 'Small'):
-        for color in ('Green', 'Red', 'Blue', 'Yellow'):
-            for identifier in range(1, 7):
-                pool.append(f'{size}{color}Block{identifier}')
-    return set(pool)
 
+OBJECT_POOL = { 'blocks': [] }
 
-## Definitions that determin the the predicate creation widgets and their options
+for size in ('Large', 'Small'):
+    for color in ('Green', 'Red', 'Blue', 'Yellow'):
+        for identifier in range(1, 7):
+            OBJECT_POOL['blocks'].append(f'{size}{color}Block{identifier}')
+
+OBJECT_POOL['people'] = ['sally', 'sue', 'jack']
+
+## Definitions that determine the the predicate creation widgets and their options
 
 ABSOLUTE_LOCATIONS = ['Base', 'FirstLayerAboveBase', 'SecondLayerAboveBase', 'TopLayer']
 
@@ -35,9 +36,9 @@ POSITIONAL_RELATIONS = {
     'below': 'is below',
     'touches':  'is touching' }
 
-# This includes an instruction for the code to load blocks. Blocks in play are not
-# available at configuration time.
-BLOCKS = ['**session_state:blocks**']
+# This includes an instruction for the code to load blocks from the pool. Blocks
+# in play are not available at configuration time.
+BLOCKS = [('pool', 'blocks')]
 
 LOCATIONS = BLOCKS + ABSOLUTE_LOCATIONS
 RELATIONS = list(POSITIONAL_RELATIONS.keys())

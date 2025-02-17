@@ -32,6 +32,7 @@ SLIDER_TIME_FORMAT = 'mm:ss:SSS'
 # Needed when initializing the session state
 def create_object_pool():
     return set()
+OBJECT_POOL = {}
 
 # These should be overruled by the task specific settings (other wise there would
 # be nothing to do). They define what kind of annotation inputs are required and
