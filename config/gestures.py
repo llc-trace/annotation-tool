@@ -8,6 +8,9 @@ Overwrites settings in config.py.
 
 TITLE = "Gesture Annotator"
 
+TASK = "Gestures"
+TIER = "Gestures"
+
 
 PREDICATES = {
 

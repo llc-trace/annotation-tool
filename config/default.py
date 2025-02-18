@@ -42,13 +42,16 @@ PROPERTIES = []
 DEFAULTS = {}
 
 # Default task name, should be overwritten in task configuration files
-DEFAULT_TASK = 'Main'
+TASK = 'Main'
 
 # Some tasks don't care about tiers (aka annotation layers), but they exist
 # anyway so these settings make sure that all annotations are at least assigned
-# to a default tier.
-USE_TIERS = False
-DEFAULT_TIER = 'Default'
+# to a default tier, it is strongly suggested that you overwrite this in a task
+# specific configuration.
+TIER = 'Default'
+
+# Use only one tier by default
+MULTIPLE_TIERS = False
 
 ## Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:

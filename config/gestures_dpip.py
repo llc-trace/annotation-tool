@@ -8,6 +8,9 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Gesture Annotator"
 
+TASK = "DPIP-Gestures"
+TIER = "DPIP-Gestures"
+
 
 PARTICIPANTS = ['Director1', 'Director2', 'Director3', 'Builder']
 

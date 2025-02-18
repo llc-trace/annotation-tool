@@ -476,17 +476,13 @@ def load_annotations():
                 remove_block(raw_annotation['remove-block'])
             elif 'remove-annotation' in raw_annotation:
                 removed_annotations.append(raw_annotation['remove-annotation'])
+            # TODO: just to make it work for now, obsolete after object pool changes
+            elif 'add-object' in raw_annotation:
+                pass
+            elif 'remove-object' in raw_annotation:
+                pass
             else:
-                timeframe = TimeFrame(
-                    start=TimePoint(milliseconds=raw_annotation['start']),
-                    end=TimePoint(milliseconds=raw_annotation['end']))
-                annotation = Annotation(
-                    identifier=raw_annotation['identifier'],
-                    video_path=video_path,
-                    timeframe=timeframe,
-                    predicate=raw_annotation['predicate'],
-                    arguments=raw_annotation['arguments'],
-                    properties=raw_annotation.get('properties', {}) )
+                annotation = Annotation().import_fields(raw_annotation)
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -839,10 +835,13 @@ class Annotation:
 
     """
 
-    def __init__(self, identifier : str = None, video_path: str = None,
-                 timeframe: TimeFrame = None, properties: dict= {},
+    def __init__(self, task: str = None, tier: str = None,
+                 identifier: str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, properties: dict = {},
                  predicate: str = None, arguments: dict = {}):
         self.identifier = identifier
+        self.task = config.TASK if task is None else task
+        self.tier = tier
         self.video_path = video_path
         self.timeframe = TimeFrame() if timeframe is None else timeframe
         self.predicate = predicate
@@ -853,8 +852,8 @@ class Annotation:
 
     def __str__(self):
         return (
-            f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
-            f' {self.as_formula()} {self.properties}')
+            f'{self.task} {self.tier} {self.identifier} {self.name} {self.tier}'
+            + f' {self.start} {self.end} {self.as_formula()} {self.properties}')
 
     def __eq__(self, other):
         return self.start == other.start
@@ -870,6 +869,8 @@ class Annotation:
 
     def import_fields(self, annotation: dict):
         self.identifier = annotation['identifier']
+        self.task = annotation.get('task')
+        self.tier = annotation.get('tier')
         self.properties = annotation['properties']
         self.predicate = annotation['predicate']
         self.arguments = annotation['arguments']
@@ -880,19 +881,11 @@ class Annotation:
 
     @classmethod
     def columns(cls):
-        return ['id', 'name', 'start', 'end', 'predicate', 'properties']
+        return ['task', 'tier', 'id', 'name', 'start', 'end', 'predicate', 'properties']
 
     @property
     def name(self):
         return self.elan_identifier()
-
-    @property
-    def tier(self):
-        return self.properties.get('tier')
-
-    @tier.setter
-    def tier(self, value):
-        self.properties['tier'] = value
 
     @property
     def start(self):
@@ -908,32 +901,38 @@ class Annotation:
     
     def matches(self, term: str):
         """Returns True if the search term occurs in the identifier, name or formula."""
-        # TODO: should lower case everything
+        if not term:
+            return True
         term = term.lower()
-        if term in self.name.lower() or term in self.identifier.lower():
+        if term in str(self.task).lower() + str(self.tier).lower():
+            return True
+        if term in self.name.lower() + self.identifier.lower():
             return True
         if term in self.as_formula().lower():
             return True
-        for prop, val in self.properties.items():
-            if prop is not None and term in prop.lower():
-                return True
-            if val is not None and term in val.lower():
-                return True
+        if term in str(self.properties).lower():
+            return True
         return False
 
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
+        self.check_task_and_tier()
         self.check_start_and_end()
         self.check_predicate_and_arguments()
         self.check_properties()
         return True if not self.errors else False
 
+    def check_task_and_tier(self):
+        if self.task is None:
+            self.errors.append(f'WARNING: the task is not specified')
+        if self.tier is None:
+            self.errors.append(f'WARNING: the tier is not specified')
+
     def check_start_and_end(self):
         """Check the start and end values of the annotation, add the the erros list
         if any errors were found."""
         # TODO: add check for out of bounds start or end
-        errors = []
         if self.start is None:
             self.errors.append(f'WARNING: the start position is not specified')
         if self.end is None:
@@ -991,6 +990,8 @@ class Annotation:
 
     def as_json(self):
         return {
+            'task': self.task,
+            'tier': self.tier,
             'identifier': self.identifier,
             'name': self.name,
             'start': self.start,
@@ -1006,15 +1007,9 @@ class Annotation:
         return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
-        return [self.identifier, self.name,
+        return [self.task, self.tier, self.identifier, self.name,
                 self.start_as_string(), self.end_as_string(),
                 self.as_formula(), str(self.properties)]
-
-    def as_markdown(self):
-        return (
-            f'**[{self.start} {self.start_as_string()} : {self.end}]** '
-            f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
-            f'Formula ⟶ {self.as_formula()}')
 
     def start_as_string(self):
         return self.point_as_string(self.start)
@@ -1038,8 +1033,8 @@ class Annotation:
         overlapping actions (like the DPIP action annotation task)."""
         if 'tier' in self.properties:
             pass
-        elif config.USE_TIERS is False:
-            self.properties['tier'] = config.DEFAULT_TIER
+        elif config.MULTIPLE_TIERS is False:
+            self.tier = config.TIER
         else:
             #print('---', tf)
             taken = current_timeframes()
@@ -1054,8 +1049,9 @@ class Annotation:
 
     def copy(self):
         return Annotation(
+            task=self.task,
+            tier=self.tier,
             identifier=self.identifier,
-            video_path=self.video_path,
             timeframe=self.timeframe.copy(),
             predicate=self.predicate,
             arguments=deepcopy(self.arguments),

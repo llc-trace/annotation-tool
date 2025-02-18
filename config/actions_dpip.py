@@ -9,6 +9,10 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Action Annotator"
 
+TASK = 'DPIP-Actions'
+MULTIPLE_TIERS = True
+
+
 def create_object_pool():
     pool = []
     for size in ('Large', 'Small'):
@@ -18,7 +22,7 @@ def create_object_pool():
     return set(pool)
 
 
-## Definitions that determin the the predicate creation widgets and their options
+## Definitions that determine the the predicate creation widgets and their options
 
 ABSOLUTE_LOCATIONS = ['Base', 'FirstLayerAboveBase', 'SecondLayerAboveBase', 'TopLayer']
 
