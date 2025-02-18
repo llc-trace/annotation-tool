@@ -120,6 +120,9 @@ if mode == 'show annotations':
             annotation_id = utils.display_remove_annotation_select()
             st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
         st.button('Reload annotations', on_click=utils.load_annotations)
+        reloaded = st.button('Reload annotations', on_click=utils.load_annotations)
+        if reloaded:
+            st.info('Annotations were reloaded')
     utils.display_messages()
     utils.display_annotations(list_settings)
 

@@ -10,10 +10,9 @@ You need to hand in a second config file with settings for the annotation task.
 import sys
 
 
-## Settings purely for display reasons
-
 TITLE = "Action Annotator"
 
+# Video settings
 DEFAULT_VIDEO_WIDTH = 50    # video width in percentage of total width
 DEFAULT_IMAGE_WIDTH = 100   # image width in pixels
 
