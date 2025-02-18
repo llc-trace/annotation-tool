@@ -12,14 +12,12 @@ TITLE = "DPIP Action Annotator"
 TASK = 'DPIP-Actions'
 MULTIPLE_TIERS = True
 
-
-def create_object_pool():
-    pool = []
-    for size in ('Large', 'Small'):
-        for color in ('Green', 'Red', 'Blue', 'Yellow'):
-            for identifier in range(1, 7):
-                pool.append(f'{size}{color}Block{identifier}')
-    return set(pool)
+OBJECT_POOL = { 'blocks': [] }
+for size in ('Large', 'Small'):
+    for color in ('Green', 'Red', 'Blue', 'Yellow'):
+        for identifier in range(1, 7):
+            OBJECT_POOL['blocks'].append(f'{size}{color}Block{identifier}')
+OBJECT_POOL['people'] = ['sally', 'sue', 'jack']
 
 
 ## Definitions that determine the the predicate creation widgets and their options
@@ -39,9 +37,9 @@ POSITIONAL_RELATIONS = {
     'below': 'is below',
     'touches':  'is touching' }
 
-# This includes an instruction for the code to load blocks. Blocks in play are not
-# available at configuration time.
-BLOCKS = ['**session_state:blocks**']
+# This includes an instruction for the code to load blocks from the pool. Blocks
+# in play are not available at configuration time.
+BLOCKS = [('pool', 'blocks')]
 
 LOCATIONS = BLOCKS + ABSOLUTE_LOCATIONS
 RELATIONS = list(POSITIONAL_RELATIONS.keys())
@@ -75,7 +73,8 @@ PREDICATES = {
         {'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [RELATIONS, LOCATIONS, 'TEXT']}],
 }
 
-# TODO: not quite sure how to do this in a way that is intuitive
+# TODO: this was an early attempt to allow default values for arguments, not quite
+# sure how to do this in an intuitive way
 DEFAULTS = {
     ('properties', 'Participant'): 'Builder'
 }

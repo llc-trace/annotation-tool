@@ -47,10 +47,10 @@ def intialize_session_state():
     if not 'video' in st.session_state:
         st.session_state.video = Video(video_path)
         log(f'Loaded video at {video_path}')
-    if not 'objects' in st.session_state:
-        st.session_state.objects = {
-            'pool': config.create_object_pool(),
-            'inplay': set() }
+    if not 'pool' in st.session_state:
+        st.session_state.pool = ObjectPool()
+        for obj_type, objects in config.OBJECT_POOL.items():
+            st.session_state.pool.add_objects(obj_type, objects)
     if not 'annotations' in st.session_state:
         load_annotations()
     if 'annotation' not in st.session_state:
@@ -78,11 +78,9 @@ def sidebar_display_info():
 
 def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
+    modes = ['add annotations', 'show annotations', 'show object pool', 'help', 'dev']
     return st.sidebar.radio(
-        "Tool mode",
-        ['add annotations', 'show annotations', 'show object pool', 'help', 'dev'],
-        key='opt_mode', index=0,
-        label_visibility='collapsed')
+        "Tool mode", modes, key='opt_mode', index=0, label_visibility='collapsed')
 
 def sidebar_display_video_controls():
     st.sidebar.header('Video controls', divider=True)
@@ -135,12 +133,14 @@ def sidebar_display_annotation_list_controls():
 def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
     dev_session = st.sidebar.checkbox('Show session_state', value=False)
+    dev_pool = st.sidebar.checkbox('Show objects pool', value=False)
     dev_log = st.sidebar.checkbox('Show log', value=False)
     dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
     dev_props = st.sidebar.checkbox('Show property specifications', value=False)
     #dev_ = st.sidebar.checkbox('Show ', value=False)
     return {
         'session_state': dev_session,
+        'pool': dev_pool,
         'log': dev_log,
         'predicate': dev_pred,
         'properties':dev_props
@@ -341,29 +341,31 @@ def display_messages():
         st.info(message)
     st.session_state.messages = []
 
-def display_available_blocks():
+def Xdisplay_available_blocks():
     st.info('**Currently available blocks**')
     blocks = list(sorted(st.session_state.objects['inplay']))
     with st.container(border=True):
         st.text('\n'.join(blocks))
 
+def display_available_objects(obj_type: str):
+    st.info(f'**Currently available {obj_type}**')
+    objs =  list(sorted(st.session_state.pool.objects[obj_type]['inplay']))
+    with st.container(border=True):
+        st.text('\n'.join(objs))
+
 def display_predicate_selector(column, key='action_type'):
     label = create_label('Select predicate')
     return st.pills(label, config.PREDICATES.keys(), key=key)
 
-def display_add_block_select(column):
+def Xdisplay_add_block_select(column):
     """Displays a selectbox for selecting a block from the pool and returns what
     the selectbox returns."""
     return column.multiselect(
         'Add object from pool',
-        [None] + sorted(st.session_state.objects['pool']),
+        [None] + sorted(st.session_state.pool.blocks),
         label_visibility='collapsed')
-    #return column.selectbox(
-    #    'Add object from pool',
-    #    [None] + sorted(st.session_state.objects['pool']),
-    #    label_visibility='collapsed')
 
-def display_remove_block_select(column):
+def Xdisplay_remove_block_select(column):
     """Displays a selectbox for removing a block from the pool and returns what
     the selectbox returns."""
     return column.selectbox(
@@ -385,7 +387,7 @@ def action_change_timeframe():
     st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
     st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
 
-def action_add_block(block: str):
+def Xaction_add_block(block: str):
     add_block(block)
     with open(st.session_state.io['json'], 'a') as fh:
         fh.write(json.dumps({"add-block": block}) + '\n')
@@ -393,11 +395,33 @@ def action_add_block(block: str):
     st.session_state.messages.append(message)
     log(message)
 
-def action_add_blocks(blocks: list):
+def Xaction_add_blocks(blocks: list):
     for block in blocks:
         action_add_block(block)
 
-def action_remove_block(block: str):
+def action_add_objects(object_type: str, objects: list):
+    """Put the objects in the list in play, that is, move them from the 'available'
+    bin to the 'inplay' bin. After this, they will be available as options."""
+    st.session_state.pool.put_objects_in_play(object_type, objects)
+    with open(st.session_state.io['json'], 'a') as fh:
+        for obj in objects:
+           fh.write(json.dumps({"add-object": (object_type, obj)}) + '\n')
+           message = f'Added {obj} and removed it from the pool'
+           st.session_state.messages.append(message)
+           log(message)
+
+def action_remove_objects(object_type: str, objects: list):
+    """Remove the objects in the list from play, that is, move them from the 'inplay'
+    bin to the 'available' bin. After this, they won't be available as options."""
+    st.session_state.pool.remove_objects_from_play(object_type, objects)
+    with open(st.session_state.io['json'], 'a') as fh:
+        for obj in objects:
+           fh.write(json.dumps({"remove-object": (object_type, obj)}) + '\n')
+           message = f'Removed {obj} and returned it to the pool'
+           st.session_state.messages.append(message)
+           log(message)
+
+def Xaction_remove_block(block: str):
     remove_block(block)
     with open(st.session_state.io['json'], 'a') as fh:
         fh.write(json.dumps({"remove-block": block}) + '\n')
@@ -424,14 +448,17 @@ def action_save_ending_time(timepoint: 'TimePoint'):
     st.session_state.opt_tune_end = False
     log(f'Saved ending time {timepoint}')
 
-def add_block(block):
+def Xadd_block(block):
     st.session_state.objects['inplay'].add(block)
     try:
         st.session_state.objects['pool'].remove(block)
     except KeyError:
         pass
 
-def remove_block(block):
+def add_object(object_type: str, obj: str):
+    st.session_state.pool.add_object(object_type, obj)
+
+def Xremove_block(block):
     st.session_state.objects['pool'].add(block)
     try:
         st.session_state.objects['inplay'].remove(block)
@@ -470,10 +497,12 @@ def load_annotations():
         annotations = []
         removed_annotations = []
         for raw_annotation in raw_annotations:
-            if 'add-block' in raw_annotation:
-                add_block(raw_annotation['add-block'])
-            elif 'remove-block' in raw_annotation:
-                remove_block(raw_annotation['remove-block'])
+            if 'add-object' in raw_annotation:
+                obj_type, obj = raw_annotation['add-object'][:2]
+                st.session_state.pool.put_object_in_play(obj_type, obj)
+            elif 'remove-object' in raw_annotation:
+                obj_type, obj = raw_annotation['remove-object'][:2]
+                st.session_state.pool.remove_object_from_play(obj_type, obj)
             elif 'remove-annotation' in raw_annotation:
                 removed_annotations.append(raw_annotation['remove-annotation'])
             # TODO: just to make it work for now, obsolete after object pool changes
@@ -564,9 +593,11 @@ def import_session_objects(options: list):
     all blocks that are in play need to be inseted."""
     expanded_list = []
     for option in options:
-        if option == '**session_state:blocks**':
-            # sort the blocks because it is a set
-            expanded_list.extend(sorted(st.session_state.objects['inplay']))
+        # if the option is a tuple then the first element is an instruction
+        if isinstance(option, tuple):
+            if option[0] == 'pool':
+                # here the instruction is to retrieve objects from the pool
+                expanded_list.extend(sorted(st.session_state.pool.get_in_play(option[1])))
         else:
             expanded_list.append(option)
     return expanded_list
@@ -575,6 +606,69 @@ def input_signature(input_description: dict):
     optionality_marker = '?' if input_description.get('optional') else ''
     return f'{input_description["type"]}{optionality_marker}'
 
+
+class ObjectPool:
+
+    def __init__(self):
+        self.objects = {}
+        self.object_types = []
+
+    def __getattr__(self, attr):
+        if attr in self.object_types:
+            return self.objects[attr]
+        else:
+            raise AttributeError(
+                f"type object '{self.__class__.__name__}' has no attribute '{attr}'")
+
+    def __str__(self):
+        def get_count(obj_type: str):
+            return sum(len(v) for v in self.objects[obj_type].values())
+        counts = [f"{ot}={get_count(ot)}" for ot in self.object_types]
+        return f'<ObjectPool {" ".join(counts)}>'
+
+    def get_available(self, obj_type: str):
+        return self.objects[obj_type]['available']
+
+    def get_in_play(self, obj_type: str):
+        return self.objects[obj_type]['inplay']
+
+    def add_object_type(self, obj_type: str):
+        self.objects[obj_type] = {'available': set(), 'inplay': set()}
+        self.object_types.append(obj_type)
+
+    def add_object(self, obj_type: str, obj: str):
+        if obj_type not in self.objects:
+            self.add_object_type(obj_type)
+        self.objects[obj_type]['available'].add(obj)
+
+    def add_objects(self, obj_type: str, objs: list):
+        if obj_type not in self.objects:
+            self.add_object_type(obj_type)
+        self.objects[obj_type]['available'].update(objs)
+
+    def put_objects_in_play(self, obj_type: str, objs: list):
+        for obj in objs:
+            self.put_object_in_play(obj_type, obj)
+
+    def put_object_in_play(self, obj_type: str, obj: str):
+        if obj_type in self.objects:
+            self.objects[obj_type]['available'].remove(obj)
+            self.objects[obj_type]['inplay'].add(obj)
+
+    def remove_objects_from_play(self, obj_type: str, objs: list):
+        for obj in objs:
+            self.remove_object_from_play(obj_type, obj)
+
+    def remove_object_from_play(self, obj_type: str, obj: str):
+        if obj_type in self.objects:
+            self.objects[obj_type]['inplay'].remove(obj)
+            self.objects[obj_type]['available'].add(obj)
+
+    def as_json(self):
+        pool = {}
+        for obj_type, data in self.objects.items():
+            pool[obj_type] = data
+        return pool
 
 
 class WindowCache:

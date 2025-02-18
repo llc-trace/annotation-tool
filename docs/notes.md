@@ -1,7 +1,9 @@
-# Notes on further developing the annotation tool
+# Further developing the annotation tool
+
+Various notes on things to do and observations made. Some up-to-date, some hopelessly deprecated.
 
 
-### Special properties (task and tier)
+## Special properties (task and tier)
 
 These are not like the other ones in that they are required for the tool to work and they really say more about the place/environment of the annotation than the annotation itself.
 
@@ -34,10 +36,7 @@ For the instruction we just want to add the task, the tier is not needed because
 
 
 ```json
-{
-  "task": "Actions",
-  "add-block": "SmallRedBlock1"
-}
+{ "task": "Actions", "add-block": "SmallRedBlock1" }
 ```
 
 And for the annotation we add the task and move the annotation:
@@ -60,7 +59,8 @@ And for the annotation we add the task and move the annotation:
 
 For the Annotation instance we add a task field.
 
-#### Legacy annotations
+
+### Legacy annotations
 
 We could have annotations like this
 
@@ -78,19 +78,17 @@ We could have annotations like this
 
 We have a mix of lines with and without top-level task and tier properties. When loading some default should be filled in.
 
-Still to do:
 
-- Loading annotations. Fill in the task and tier if needed.
-- Script to fix json file without tasks.
-
-#### Collecting tasks
+### Collecting tasks
 
 I want to load a task from disk:
 
-1. find the tasks
+1. find the tasks in the config directory, or maybe in a tasks directory
 2. do the task specific import (potentially tricky because you have to undo a previous load)
+3. instead of the previous, walk away from the import-based approach and use Yaml configuration files.
 
-Some code to find a task
+
+Initial code to find a task in the config directory:
 
 ```python
 import pathlib
@@ -115,8 +113,10 @@ for task in sorted(tasks):
 	print(f'{task}')
 ```
 
+This is all very low priority.
 
-### Adding Gesture annotation
+
+## Adding Gesture annotation
 
 Taken from  Multimodal\_AMR\_Annotation\_Guidelines\_20220914.pdf:
 
@@ -150,18 +150,3 @@ ARG0 and ARG2 correspond to the gesturer and addressee. ARG1, the semantic conte
 | Iconic gesture  | The object or action being modeled. |
 | Deictic gesture | The object or location being pointed to. |
 | Emblem          | The conventional, culturally agreed- upon meaning of the gesture. |
-
-
-### Generalizing action annotation
-
-```
-open(Sally, box) -> Sally opened the box.
-put(Sally, marble, box) -> Sally put the marble in the box.
-close(Sally, box) -> Sally closed the box.
-leave(Sally,room) -> Sally left the room.
-open(Anne, box) -> Anne opened the box.
-move(Anne, marble,box,basket) -> Anne moved the marble from the box to the basket.
-close(Anne,box) -> Anne closed the box.
-return(Sally,room)-> Sally returned to the room.
-open(Sally, box) -> Sally opened the box.
-```
