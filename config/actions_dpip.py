@@ -72,7 +72,8 @@ PREDICATES = {
         {'type': 'Destination', 'label': DESTINATION_LABEL, 'items': [RELATIONS, LOCATIONS, 'TEXT']}],
 }
 
-# TODO: not quite sure how to do this in a way that is intuitive
+# TODO: this was an early attempt to allow default values for arguments, not quite
+# sure how to do this in an intuitive way
 DEFAULTS = {
     ('properties', 'Participant'): 'Builder'
 }
