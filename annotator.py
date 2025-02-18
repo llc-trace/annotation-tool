@@ -147,7 +147,7 @@ if mode == 'show object pool':
 if mode == 'help':
 
     st.title('Annotation tool help')
-    url = 'https://github.com/llc-trace/annotation-tool/blob/main/manual.md'
+    url = 'https://github.com/llc-trace/annotation-tool/blob/main/docs/manual/index.md'
     st.markdown(f'For help see the manual at [{url}]({url}).')
 
 
