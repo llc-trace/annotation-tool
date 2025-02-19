@@ -9,15 +9,16 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Action Annotator"
 
+TASK = 'DPIP-Actions'
+MULTIPLE_TIERS = True
 
 OBJECT_POOL = { 'blocks': [] }
-
 for size in ('Large', 'Small'):
     for color in ('Green', 'Red', 'Blue', 'Yellow'):
         for identifier in range(1, 7):
             OBJECT_POOL['blocks'].append(f'{size}{color}Block{identifier}')
-
 OBJECT_POOL['people'] = ['sally', 'sue', 'jack']
+
 
 ## Definitions that determine the the predicate creation widgets and their options
 
@@ -79,4 +80,5 @@ DEFAULTS = {
 }
 
 
-USE_TIERS = True
+MUTLIPLE_TIERS = True
+TIERS = ['ACTION1', 'ACTION2']

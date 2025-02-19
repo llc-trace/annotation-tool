@@ -70,10 +70,9 @@ def session_options():
     return options
 
 def sidebar_display_info():
-    #text = (
-    #    f'Blocks: {len(st.session_state.objects["inplay"])}\n'
-    #    + f'Annotations: {len(st.session_state.annotations)}')
-    text = f'Annotations: {len(st.session_state.annotations)}'
+    text = (
+        f'Task: "{config.TASK}"\n'
+        + f'Annotations: {len(st.session_state.annotations)}')
     st.sidebar.code(text, language='yaml')
 
 def sidebar_display_tool_mode():
@@ -341,12 +340,6 @@ def display_messages():
         st.info(message)
     st.session_state.messages = []
 
-def Xdisplay_available_blocks():
-    st.info('**Currently available blocks**')
-    blocks = list(sorted(st.session_state.objects['inplay']))
-    with st.container(border=True):
-        st.text('\n'.join(blocks))
-
 def display_available_objects(obj_type: str):
     st.info(f'**Currently available {obj_type}**')
     objs =  list(sorted(st.session_state.pool.objects[obj_type]['inplay']))
@@ -356,22 +349,6 @@ def display_available_objects(obj_type: str):
 def display_predicate_selector(column, key='action_type'):
     label = create_label('Select predicate')
     return st.pills(label, config.PREDICATES.keys(), key=key)
-
-def Xdisplay_add_block_select(column):
-    """Displays a selectbox for selecting a block from the pool and returns what
-    the selectbox returns."""
-    return column.multiselect(
-        'Add object from pool',
-        [None] + sorted(st.session_state.pool.blocks),
-        label_visibility='collapsed')
-
-def Xdisplay_remove_block_select(column):
-    """Displays a selectbox for removing a block from the pool and returns what
-    the selectbox returns."""
-    return column.selectbox(
-        'Remove object and return to pool',
-        [None] + sorted(st.session_state.objects['inplay']),
-        label_visibility='collapsed')
 
 def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
@@ -386,18 +363,6 @@ def action_change_timeframe():
         st.session_state.annotation.timeframe = TimeFrame()
     st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
     st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
-
-def Xaction_add_block(block: str):
-    add_block(block)
-    with open(st.session_state.io['json'], 'a') as fh:
-        fh.write(json.dumps({"add-block": block}) + '\n')
-    message = f'Added {block} and removed it from the pool'
-    st.session_state.messages.append(message)
-    log(message)
-
-def Xaction_add_blocks(blocks: list):
-    for block in blocks:
-        action_add_block(block)
 
 def action_add_objects(object_type: str, objects: list):
     """Put the objects in the list in play, that is, move them from the 'available'
@@ -421,14 +386,6 @@ def action_remove_objects(object_type: str, objects: list):
            st.session_state.messages.append(message)
            log(message)
 
-def Xaction_remove_block(block: str):
-    remove_block(block)
-    with open(st.session_state.io['json'], 'a') as fh:
-        fh.write(json.dumps({"remove-block": block}) + '\n')
-    message = f'Removed {block} and added it back to the pool'
-    st.session_state.messages.append(message)
-    log(message)
-
 def action_remove_annotation(annotation_id: str):
     if annotation_id is not None:
         with open(st.session_state.io['json'], 'a') as fh:
@@ -448,22 +405,8 @@ def action_save_ending_time(timepoint: 'TimePoint'):
     st.session_state.opt_tune_end = False
     log(f'Saved ending time {timepoint}')
 
-def Xadd_block(block):
-    st.session_state.objects['inplay'].add(block)
-    try:
-        st.session_state.objects['pool'].remove(block)
-    except KeyError:
-        pass
-
 def add_object(object_type: str, obj: str):
     st.session_state.pool.add_object(object_type, obj)
-
-def Xremove_block(block):
-    st.session_state.objects['pool'].add(block)
-    try:
-        st.session_state.objects['inplay'].remove(block)
-    except KeyError:
-        pass
 
 def remove_annotation(annotation_id: str):
     st.session_state.annotations = \
@@ -506,16 +449,7 @@ def load_annotations():
             elif 'remove-annotation' in raw_annotation:
                 removed_annotations.append(raw_annotation['remove-annotation'])
             else:
-                timeframe = TimeFrame(
-                    start=TimePoint(milliseconds=raw_annotation['start']),
-                    end=TimePoint(milliseconds=raw_annotation['end']))
-                annotation = Annotation(
-                    identifier=raw_annotation['identifier'],
-                    video_path=video_path,
-                    timeframe=timeframe,
-                    predicate=raw_annotation['predicate'],
-                    arguments=raw_annotation['arguments'],
-                    properties=raw_annotation.get('properties', {}) )
+                annotation = Annotation().import_fields(raw_annotation)
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -559,9 +493,10 @@ def create_label(text: str, size='normalsize'):
     for sizes use the ones defined by LaTeX (small, large, Large, etcetera)."""
     return r"$\textsf{" + f'\\{size} {text}' + "}$"
 
-def current_timeframes():
-    """Returns all timeframes of all the current annotations."""
-    return [annotation.timeframe for annotation in st.session_state.annotations]
+def current_timeframes(task: str) -> list:
+    """Returns all <name, timeframe> pairs of the current annotations in the task."""
+    annos = st.session_state.annotations
+    return [(anno.name, anno.timeframe) for anno in annos if anno.task == task]
 
 def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
     """Return True if two time frames overlap, False otherwise."""
@@ -656,7 +591,12 @@ class ObjectPool:
 
     def put_object_in_play(self, obj_type: str, obj: str):
         if obj_type in self.objects:
-            self.objects[obj_type]['available'].remove(obj)
+            try:
+                self.objects[obj_type]['available'].remove(obj)
+            except KeyError:
+                # TODO: this happens when reloading the annotations
+                # should perhaps reset the pools when reloading
+                log(f'{obj} was already put in play')
             self.objects[obj_type]['inplay'].add(obj)
 
     def remove_objects_from_play(self, obj_type: str, objs: list):
@@ -665,7 +605,12 @@ class ObjectPool:
 
     def remove_object_from_play(self, obj_type: str, obj: str):
         if obj_type in self.objects:
-            self.objects[obj_type]['inplay'].remove(obj)
+            try:
+                self.objects[obj_type]['inplay'].remove(obj)
+            except KeyError:
+                # TODO: this happens when reloading the annotations
+                # should perhaps reset the pools when reloading
+                log(f'{obj} was already removed from play')
             self.objects[obj_type]['available'].add(obj)
 
     def as_json(self):
@@ -933,10 +878,13 @@ class Annotation:
 
     """
 
-    def __init__(self, identifier : str = None, video_path: str = None,
-                 timeframe: TimeFrame = None, properties: dict= {},
+    def __init__(self, task: str = None, tier: str = None,
+                 identifier: str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, properties: dict = {},
                  predicate: str = None, arguments: dict = {}):
         self.identifier = identifier
+        self.task = config.TASK if task is None else task
+        self.tier = tier
         self.video_path = video_path
         self.timeframe = TimeFrame() if timeframe is None else timeframe
         self.predicate = predicate
@@ -947,8 +895,8 @@ class Annotation:
 
     def __str__(self):
         return (
-            f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
-            f' {self.as_formula()} {self.properties}')
+            f'{self.task} {self.tier} {self.identifier} {self.name} {self.tier}'
+            + f' {self.start} {self.end} {self.as_formula()} {self.properties}')
 
     def __eq__(self, other):
         return self.start == other.start
@@ -964,6 +912,8 @@ class Annotation:
 
     def import_fields(self, annotation: dict):
         self.identifier = annotation['identifier']
+        self.task = annotation.get('task')
+        self.tier = annotation.get('tier')
         self.properties = annotation['properties']
         self.predicate = annotation['predicate']
         self.arguments = annotation['arguments']
@@ -974,19 +924,11 @@ class Annotation:
 
     @classmethod
     def columns(cls):
-        return ['id', 'name', 'start', 'end', 'predicate', 'properties']
+        return ['task', 'tier', 'id', 'name', 'start', 'end', 'predicate', 'properties']
 
     @property
     def name(self):
         return self.elan_identifier()
-
-    @property
-    def tier(self):
-        return self.properties.get('tier')
-
-    @tier.setter
-    def tier(self, value):
-        self.properties['tier'] = value
 
     @property
     def start(self):
@@ -1002,32 +944,38 @@ class Annotation:
     
     def matches(self, term: str):
         """Returns True if the search term occurs in the identifier, name or formula."""
-        # TODO: should lower case everything
+        if not term:
+            return True
         term = term.lower()
-        if term in self.name.lower() or term in self.identifier.lower():
+        if term in str(self.task).lower() + str(self.tier).lower():
+            return True
+        if term in self.name.lower() + self.identifier.lower():
             return True
         if term in self.as_formula().lower():
             return True
-        for prop, val in self.properties.items():
-            if prop is not None and term in prop.lower():
-                return True
-            if val is not None and term in val.lower():
-                return True
+        if term in str(self.properties).lower():
+            return True
         return False
 
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
+        self.check_task_and_tier()
         self.check_start_and_end()
         self.check_predicate_and_arguments()
         self.check_properties()
         return True if not self.errors else False
 
+    def check_task_and_tier(self):
+        if self.task is None:
+            self.errors.append(f'WARNING: the task is not specified')
+        if self.tier is None:
+            self.errors.append(f'WARNING: the tier is not specified')
+
     def check_start_and_end(self):
         """Check the start and end values of the annotation, add the the erros list
         if any errors were found."""
         # TODO: add check for out of bounds start or end
-        errors = []
         if self.start is None:
             self.errors.append(f'WARNING: the start position is not specified')
         if self.end is None:
@@ -1085,6 +1033,8 @@ class Annotation:
 
     def as_json(self):
         return {
+            'task': self.task,
+            'tier': self.tier,
             'identifier': self.identifier,
             'name': self.name,
             'start': self.start,
@@ -1100,15 +1050,9 @@ class Annotation:
         return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
-        return [self.identifier, self.name,
+        return [self.task, self.tier, self.identifier, self.name,
                 self.start_as_string(), self.end_as_string(),
                 self.as_formula(), str(self.properties)]
-
-    def as_markdown(self):
-        return (
-            f'**[{self.start} {self.start_as_string()} : {self.end}]** '
-            f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
-            f'Formula ⟶ {self.as_formula()}')
 
     def start_as_string(self):
         return self.point_as_string(self.start)
@@ -1123,33 +1067,38 @@ class Annotation:
         t = TimePoint(milliseconds=ms)
         return f'{t.mm()}:{t.ss()}.{t.mmm()}'
 
-    def calculate_tier(self, tf: TimeFrame):
-        """Calculate the tier for an annotation based on overlap. This is only relevant
-        for those annotations where we want to map to an ELAN annotation, which requires
-        tiers. There are three cases: (1) tasks where the tier is defined with one of
-        the properties (like the DPIP gesture annotation), (2) tasks where we do not
-        care about tiers and (3) task that assume two tiers with the second to deal with
-        overlapping actions (like the DPIP action annotation task)."""
-        if 'tier' in self.properties:
-            pass
-        elif config.USE_TIERS is False:
-            self.properties['tier'] = config.DEFAULT_TIER
+    def calculate_tier(self, tf: TimeFrame, selected_tier: str):
+        """Calculate the tier for an annotation. There are three cases:
+        1. Tasks with only one tier where the tier is defined in the configuration
+        2. Tasks where the tier is user-defined (like the DPIP gesture annotation)
+        3. Task that assume two tiers where the second is used for annotations that
+           overlap with an annotation in the first tier (like the DPIP action
+           annotation task).
+        """
+        # Case 1: tier comes from the configuration
+        if not config.MULTIPLE_TIERS:
+            self.tier = config.TIER
+        # Case 2: tier comes from the second argument
+        elif config.TIER_IS_DEFINED_BY_USER:
+            self.tier = selected_tier
+        # Case 3: calculate the tier
         else:
             #print('---', tf)
-            taken = current_timeframes()
-            for taken_tf in taken:
+            taken = current_timeframes(self.task)
+            for name, taken_tf in taken:
                 #print('   ', taken_tf, overlap(tf, taken_tf))
                 if overlap(tf, taken_tf):
-                    #print('... overlap found with', taken_tf)
-                    self.properties['tier'] = 'ACTION2'
+                    #print('... overlap found with', name, taken_tf)
+                    self.tier = config.TIERS[1]
                     return
             #print('... no overlap found')
-            self.properties['tier'] = 'ACTION1'
+            self.tier = config.TIERS[0]
 
     def copy(self):
         return Annotation(
+            task=self.task,
+            tier=self.tier,
             identifier=self.identifier,
-            video_path=self.video_path,
             timeframe=self.timeframe.copy(),
             predicate=self.predicate,
             arguments=deepcopy(self.arguments),

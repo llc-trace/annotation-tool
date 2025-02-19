@@ -8,9 +8,13 @@ Overwrites settings in config.py.
 
 TITLE = "DPIP Gesture Annotator"
 
+TASK = "DPIP-Gestures"
+TIER = None
+
+MULTIPLE_TIERS = True
+TIER_IS_DEFINED_BY_USER = True
 
 PARTICIPANTS = ['Director1', 'Director2', 'Director3', 'Builder']
-
 TIERS = [f'GESTURES-{participant}' for participant in PARTICIPANTS]
 
 
@@ -32,8 +36,8 @@ PREDICATES = {
         {'type': 'ARG2', 'label': '**ARG2**', 'items': ['TEXT']}],
 }
 
+
 PROPERTIES = [
 
-    {'type': 'tier', 'label': '**Tier**', 'items': [TIERS]},
     {'type': 'comment', 'label': '**Comment (optional)**', 'items': ['TEXT'], 'optional': True}
 ]

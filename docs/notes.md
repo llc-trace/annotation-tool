@@ -95,22 +95,22 @@ import pathlib
 
 tasks = {}
 for f in pathlib.Path('config').iterdir():
-  if f.name in ('__init__.py', 'default.py'):
-    continue
-  if f.is_file() and f.suffix == '.py':
-    #print(type(f), f.name)
-    with f.open() as fh:
-      for line in fh.readlines():
-        line = line.strip()
-        if line.startswith('TASK =') or line.startswith('TASK='):
-          # this will break down when a comment follows the line
-          # look into using pyparsing
-          task = line.split('=', 1)[1].strip()
-          task = task.strip('\"\'')
-          #print(f'TASK = {task}')
-          tasks[task] = f
+	if f.name in ('__init__.py', 'default.py'):
+		continue
+	if f.is_file() and f.suffix == '.py':
+		#print(type(f), f.name)
+		with f.open() as fh:
+			for line in fh.readlines():
+				line = line.strip()
+				if line.startswith('TASK =') or line.startswith('TASK='):
+					# this will break down when a comment follows the line
+					# look into using pyparsing
+					task = line.split('=', 1)[1].strip()
+					task = task.strip('\"\'')
+					#print(f'TASK = {task}')
+					tasks[task] = f
 for task in sorted(tasks):
-  print(f'{task}')
+	print(f'{task}')
 ```
 
 This is all very low priority.
