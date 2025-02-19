@@ -50,8 +50,10 @@ TASK = 'Main'
 # specific configuration.
 TIER = 'Default'
 
-# Use only one tier by default
+# By default, use only one tier and don't let the tier be defined by the 
+# annotator but by the configuration file.
 MULTIPLE_TIERS = False
+TIER_IS_DEFINED_BY_USER = False
 
 ## Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:

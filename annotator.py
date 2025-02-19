@@ -51,6 +51,13 @@ if DEBUG:
     st.write(utils.session_options())
 
 
+def display_tier():
+    st.write('**Tier**')
+    return st.selectbox(
+        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
+
+
+
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -75,10 +82,14 @@ if mode == 'add annotations':
         args = utils.display_inputs(predicate, arguments)
         args = utils.process_arguments(args)
 
-    # The box with the properties. But don't show it until after predicate
-    # selection, which structures the annotation but also solved an issue
-    # with refreshing the properties after an annotation was saved.
+    # The boxes with the tier and the properties, if relevant. Don't show them
+    # until after predicate selection, which structures the annotation but also
+    # solved an issue with refreshing the properties after an annotation was saved.
+    selected_tier = None
     if predicate:
+        if config.TIER_IS_DEFINED_BY_USER:
+            with st.container(border=True):
+                selected_tier = display_tier()
         with st.container(border=True):
             properties = config.PROPERTIES
             props = utils.display_inputs(None, properties)
@@ -91,7 +102,7 @@ if mode == 'add annotations':
     annotation.predicate = predicate
     annotation.arguments = args
     annotation.properties = props
-    annotation.calculate_tier(tf)
+    annotation.calculate_tier(tf, selected_tier)
 
     # Display the updated annotation with a save button or a warning    
     with st.container(border=True):
@@ -119,7 +130,6 @@ if mode == 'show annotations':
         with st.container(border=True):
             annotation_id = utils.display_remove_annotation_select()
             st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
-        st.button('Reload annotations', on_click=utils.load_annotations)
         reloaded = st.button('Reload annotations', on_click=utils.load_annotations)
         if reloaded:
             st.info('Annotations were reloaded')
