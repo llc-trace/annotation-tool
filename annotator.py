@@ -57,7 +57,6 @@ def display_tier():
         'select-tier', [None] + config.TIERS, label_visibility='collapsed')
 
 
-
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -208,3 +207,7 @@ if mode == 'dev':
         with st.container(border=True):
             st.markdown('**Property specifications**')
             st.write(config.PROPERTIES)
+    if dev['cache']:
+        with st.container(border=True):
+            st.markdown('**Image cash**')
+            st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))

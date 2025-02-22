@@ -9,7 +9,6 @@ import os
 import sys
 import json
 import time
-import pathlib
 import datetime
 import pathlib
 import functools
@@ -21,6 +20,7 @@ import streamlit as st
 import streamlit_timeline
 
 from config import default as config
+from util.cache import ImageCache
 
 
 ## Streamlit utilities
@@ -35,6 +35,10 @@ def box(key, options):
         "dummy", [None] + options, key=key, label_visibility='collapsed')
 
 def intialize_session_state():
+    """The session state contains some controls as well as filenames for the output
+    and the log, the current video, the object pool, the list of annoations, the
+    current annotation, the image cash, the current errors and the current messages.
+    """
     video_path = get_video_location_from_command_line()
     if not 'io' in st.session_state:
         basename = os.path.basename(video_path)
@@ -55,8 +59,8 @@ def intialize_session_state():
         load_annotations()
     if 'annotation' not in st.session_state:
         st.session_state.annotation = Annotation()
-    if not 'windows' in st.session_state:
-        st.session_state.windows = WindowCache()
+    if not 'cache' in st.session_state:
+        st.session_state.cache = ImageCache()
     if not 'errors' in st.session_state:
         st.session_state.errors = []
     if not 'messages' in st.session_state:
@@ -136,13 +140,14 @@ def sidebar_display_dev_controls():
     dev_log = st.sidebar.checkbox('Show log', value=False)
     dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
     dev_props = st.sidebar.checkbox('Show property specifications', value=False)
-    #dev_ = st.sidebar.checkbox('Show ', value=False)
+    dev_cache = st.sidebar.checkbox('Show image cache', value=False)
     return {
         'session_state': dev_session,
         'pool': dev_pool,
         'log': dev_log,
         'predicate': dev_pred,
-        'properties':dev_props
+        'properties':dev_props,
+        'cache': dev_cache
         }
 
 def display_video(video: 'Video', width, seconds):
@@ -170,12 +175,6 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     step = datetime.timedelta(milliseconds=100)
     margin = datetime.timedelta(seconds=config.FINE_TUNING_WINDOW)
     d = datetime.datetime(2020, 1, 1, tp.hours, tp.minutes, tp.seconds)
-    if False:
-        # for now we are not showing those other timeframes
-        left_context = tf.slice_to_left(tp.in_milliseconds(), n=4, step=1000)
-        first_frames = tf.slice_to_right(tp.in_milliseconds(), n=5, step=1000)
-        header = 'Window of nine frames around the selected start point or end point'
-        display_frames(st, left_context + first_frames, header=header)
     with st.container(border=False):
         _, col, _ = st.columns([1,30,1])
         return col.slider(
@@ -187,8 +186,8 @@ def display_left_boundary(timeframe: 'TimeFrame'):
     timepoint = timepoint_from_datetime(date)
     step = 100
     ms = timeframe.start.in_milliseconds()
-    add_frames_to_cache(timeframe, ms, step)
-    display_sliding_window(st, st.session_state.windows[ms], timepoint)
+    frames = get_frames(timeframe.video, ms, step)
+    display_sliding_window(st, frames, timepoint)
     st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
 
 def display_right_boundary(timeframe: 'TimeFrame'):
@@ -196,20 +195,28 @@ def display_right_boundary(timeframe: 'TimeFrame'):
     timepoint = timepoint_from_datetime(date)
     step = 100
     ms = timeframe.end.in_milliseconds()
-    add_frames_to_cache(timeframe, ms, step)
-    display_sliding_window(st, st.session_state.windows[ms], timepoint)
+    frames = get_frames(timeframe.video, ms, step)
+    display_sliding_window(st, frames, timepoint)
     st.button("Save ending time", on_click=action_save_ending_time, args=[timepoint])
 
-def add_frames_to_cache(timeframe, ms, step):
-    """Makes sure that the frames needed are in the cache."""
-    if ms not in st.session_state.windows.data:
-        window = timeframe.get_window(ms, n=config.CONTEXT_SIZE, step=step)
-        log(f'Cached frame window at {ms}')
-        st.session_state.windows[ms] = window
-        # TODO. This is to make "Assertion fctx->async_lock" errors less likely,
-        # this is much easier to do than the real fix which seems to require 
-        # dealing with threads.
-        time.sleep(1)
+def get_frames(video, ms: int, step: int):
+    window = get_window(ms, n=config.CONTEXT_SIZE, step=step)
+    frames = [Frame(video, ms) for ms in window]
+    # TODO. This is to make "Assertion fctx->async_lock" errors less likely, this is
+    # much easier to do than the real fix which seems to require dealing with threads.
+    time.sleep(1)
+    return frames
+
+def get_window(milliseconds: int, n=4, step=100) -> list:
+    """Returns a list of timepoints (in milliseconds) in a window around the given
+    timepoint in milliseconds."""
+    timepoints = []
+    for ms in range(n * -step, 0, step):
+        timepoints.append(milliseconds + ms)
+    timepoints.append(milliseconds)
+    for ms in range(0, n * step, step):
+        timepoints.append(milliseconds + ms + step)
+    return timepoints
 
 def display_sliding_window(column, frames, tp, header=None):
     """Display frames horizontally in a box."""
@@ -620,25 +627,6 @@ class ObjectPool:
         return pool
 
 
-class WindowCache:
-
-    def __init__(self):
-        self.data = {}
-
-    def __len__(self):
-        return len(self.data)
-
-    def __str__(self):
-        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
-        return f'<WindowCache with {len(self)} timepoints  {points}>'
-
-    def __getitem__(self, i):
-        return self.data[i]
-
-    def __setitem__(self, i, val):
-        self.data[i] = val
-
-
 @functools.total_ordering
 class TimePoint:
 
@@ -761,22 +749,6 @@ class TimeFrame:
     def frame_at(self, milliseconds: int):
         return Frame(self.video, milliseconds)
 
-    def first_frames(self, n=4, step=100):
-        """Return the first n frames (timepoints) in the timeframe, with the specified
-        spacing between each frame."""
-        return self.slice_to_right(self.start.in_milliseconds(), n=n, step=step)
-
-    def last_frames(self, n=4, step=100):
-        """Return the last n frames (timepoints) in the timeframe, with the specified
-        spacing between each frame."""
-        return self.slice_to_left(self.end.in_milliseconds(), n=n, step=step)
-
-    def left_context(self, n=4, step=100):
-        return self.slice_to_left(self.start.in_milliseconds(), n=n, step=step)
-
-    def right_context(self, n=4, step=100):
-        return self.slice_to_right(self.end.in_milliseconds(), n=n, step=step)
-
     def slice_to_left(self, milliseconds: int, n=4, step=100):
         frames = []
         for ms in range(n * -step, 0, step):
@@ -787,17 +759,6 @@ class TimeFrame:
         frames = []
         for ms in range(0, n * step, step):
             frames.append(Frame(self.video, milliseconds + ms))
-        return frames
-
-    def get_window(self, milliseconds: int, n=4, step=100):
-        """Returns a list of all frames in a window around the given timepoint
-        in milliseconds."""
-        frames = []
-        for ms in range(n * -step, 0, step):
-            frames.append(Frame(self.video, milliseconds + ms))
-        frames.append(Frame(self.video, milliseconds))
-        for ms in range(0, n * step, step):
-            frames.append(Frame(self.video, milliseconds + ms + step))
         return frames
         
 
@@ -854,7 +815,12 @@ class Frame:
 
     def __init__(self, vidcap, offset: int):
         self.timepoint = TimePoint(milliseconds=offset)
-        self.image = vidcap.extract_frame(offset)
+        if offset in st.session_state.cache:
+            image = st.session_state.cache[offset]
+        else:
+            image = vidcap.extract_frame(offset)
+            image = st.session_state.cache[offset] = image
+        self.image = image
         self.success = False if self.image is None else True 
 
     def __str__(self):
