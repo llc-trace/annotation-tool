@@ -230,12 +230,13 @@ def display_sliding_window(column, frames, tp, header=None):
                 is_focus = True
             display_frame(cols[i], frame, focus=is_focus)
 
-def display_frames(column, frames, header=None):
+def display_frames(column, frames, cols=10, header=None):
     """Display frames horizontally in a box."""
     box = column.container(border=True)
     if header is not None:
         box.write(header)
-    cols = box.columns(len(frames))
+    #cols = box.columns(len(frames))
+    cols = box.columns(cols)
     for i, frame in enumerate(frames):
         display_frame(cols[i], frame)
 
@@ -312,24 +313,23 @@ def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
         if anno is None:
             return None
-        return Annotation().import_fields(anno)
+        annotation = Annotation().import_fields(anno)
+        st.write(annotation)
+        offsets = list(range(annotation.start, annotation.end, 500))
+        frames = [Frame(st.session_state.video, o) for o in offsets[:10]]
+        display_frames(st, frames, cols=10)
     tiers = sorted(set([a.tier for a in annotations if a.tier]))
     groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
     # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 
-    # screen and the timeline at the bottom is 1.8 cm. The 42 is a mulitplier to get
+    # screen and the timeline at the bottom is 1.8 cm. The 42 is a multiplier to get
     # to a number of pixels.
     height = ((len(tiers) * 1.3) + 1.8) * 42
     options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     timeline_items = get_timeline(annotations)
     try:
         item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
-        #if st.button("What's the date doing there?"):
-        #    st.info(
-        #        "It is a timeline and by default it prints the date. The timeframe"
-        #        " of the entire video starts at the first second of that date.")
         if item:
-            st.write(annotation_pp(item['annotation']))
-            #st.write(annotation_pp(item['annotation']).as_json())
+            annotation_pp(item['annotation'])
     except:
         pass
 
