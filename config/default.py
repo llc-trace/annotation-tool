@@ -10,10 +10,9 @@ You need to hand in a second config file with settings for the annotation task.
 import sys
 
 
-## Settings purely for display reasons
-
 TITLE = "Action Annotator"
 
+# Video settings
 DEFAULT_VIDEO_WIDTH = 50    # video width in percentage of total width
 DEFAULT_IMAGE_WIDTH = 100   # image width in pixels
 
@@ -32,6 +31,7 @@ SLIDER_TIME_FORMAT = 'mm:ss:SSS'
 # Needed when initializing the session state
 def create_object_pool():
     return set()
+OBJECT_POOL = {}
 
 # These should be overruled by the task specific settings (other wise there would
 # be nothing to do). They define what kind of annotation inputs are required and
@@ -42,13 +42,18 @@ PROPERTIES = []
 DEFAULTS = {}
 
 # Default task name, should be overwritten in task configuration files
-DEFAULT_TASK = 'Main'
+TASK = 'Main'
 
 # Some tasks don't care about tiers (aka annotation layers), but they exist
 # anyway so these settings make sure that all annotations are at least assigned
-# to a default tier.
-USE_TIERS = False
-DEFAULT_TIER = 'Default'
+# to a default tier, it is strongly suggested that you overwrite this in a task
+# specific configuration.
+TIER = 'Default'
+
+# By default, use only one tier and don't let the tier be defined by the 
+# annotator but by the configuration file.
+MULTIPLE_TIERS = False
+TIER_IS_DEFINED_BY_USER = False
 
 ## Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:

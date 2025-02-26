@@ -51,6 +51,12 @@ if DEBUG:
     st.write(utils.session_options())
 
 
+def display_tier():
+    st.write('**Tier**')
+    return st.selectbox(
+        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
+
+
 ## MAIN CONTENT
 
 if mode == 'add annotations':
@@ -75,10 +81,14 @@ if mode == 'add annotations':
         args = utils.display_inputs(predicate, arguments)
         args = utils.process_arguments(args)
 
-    # The box with the properties. But don't show it until after predicate
-    # selection, which structures the annotation but also solved an issue
-    # with refreshing the properties after an annotation was saved.
+    # The boxes with the tier and the properties, if relevant. Don't show them
+    # until after predicate selection, which structures the annotation but also
+    # solved an issue with refreshing the properties after an annotation was saved.
+    selected_tier = None
     if predicate:
+        if config.TIER_IS_DEFINED_BY_USER:
+            with st.container(border=True):
+                selected_tier = display_tier()
         with st.container(border=True):
             properties = config.PROPERTIES
             props = utils.display_inputs(None, properties)
@@ -91,7 +101,7 @@ if mode == 'add annotations':
     annotation.predicate = predicate
     annotation.arguments = args
     annotation.properties = props
-    annotation.calculate_tier(tf)
+    annotation.calculate_tier(tf, selected_tier)
 
     # Display the updated annotation with a save button or a warning    
     with st.container(border=True):
@@ -119,27 +129,52 @@ if mode == 'show annotations':
         with st.container(border=True):
             annotation_id = utils.display_remove_annotation_select()
             st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
-        st.button('Reload annotations', on_click=utils.load_annotations)
+        reloaded = st.button('Reload annotations', on_click=utils.load_annotations)
+        if reloaded:
+            st.info('Annotations were reloaded')
     utils.display_messages()
     utils.display_annotations(list_settings)
 
 
 if mode == 'show object pool':
 
-    st.title('Blocks')
-    st.text("Add blocks into play from the pool or remove them and put them back into the pool")
-    messages = []
-    c1, c2, _ = st.columns([4, 2, 6])
-    #block_to_add = utils.display_add_block_select(c1)
-    blocks_to_add = utils.display_add_block_select(c1)
-    #c2.button("Add", on_click=utils.action_add_block, args=[block_to_add])
-    c2.button("Add", on_click=utils.action_add_blocks, args=[blocks_to_add])
-    c3, c4, _ = st.columns([4, 2, 6])
-    block_to_remove = utils.display_remove_block_select(c3)
-    c4.button("Remove", on_click=utils.action_remove_block, args=[block_to_remove])
-    utils.display_messages()
-    utils.display_available_blocks()
+    st.title('Object Pool')
+    pool = st.session_state.pool
+    object_types = st.session_state.pool.object_types
 
+    if object_types:
+        st.write(pool)
+        tabs = st.tabs(object_types)
+        for i in range(len(tabs)):
+            with tabs[i]:
+                obj_type = object_types[i]
+                available = pool.get_available(obj_type)
+                inplay = pool.get_in_play(obj_type)
+                st.text(
+                    f'There are {len(available) + len(inplay)} {obj_type} in the pool, '
+                    f'{len(available)} are available and {len(inplay)} are in use')
+                label = f'Select {obj_type} from the pool to put in use'
+                st.write(label)
+                c1, c2, _ = st.columns([4, 2, 6])
+                selected = c1.multiselect(label, available, label_visibility='collapsed')
+                c2.button(f"Add {obj_type}",
+                          on_click=utils.action_add_objects,
+                          args=[obj_type, selected])
+                label = f'Stop using {object_types[i]} and put them back in the pool'
+                st.write(label)
+                c3, c4, _ = st.columns([4, 2, 6])
+                selected = c3.multiselect(label, inplay, label_visibility='collapsed')
+                c4.button(f"Remove {obj_type}", on_click=utils.action_remove_objects, args=[obj_type, selected])
+                utils.display_messages()
+                utils.display_available_objects(obj_type)
+    else:
+        st.text('The Object Pool is not used for this task.')
+
+    # blocks_to_add = utils.display_add_block_select(c1)
+    # c2.button("Add", on_click=utils.action_add_blocks, args=[blocks_to_add])
+    # block_to_remove = utils.display_remove_block_select(c3)
+    # c4.button("Remove", on_click=utils.action_remove_block, args=[block_to_remove])
+    
 
 if mode == 'help':
 
@@ -155,6 +190,10 @@ if mode == 'dev':
         with st.container(border=True):
             st.markdown('**Session State**')
             st.write(st.session_state)
+    if dev['pool']:
+        with st.container(border=True):
+            st.markdown('**Objects Pool**')
+            st.write(st.session_state.pool.as_json())
     if dev['log']:
         with open(st.session_state.io['log']) as fh:
             with st.container(border=True):
@@ -168,3 +207,7 @@ if mode == 'dev':
         with st.container(border=True):
             st.markdown('**Property specifications**')
             st.write(config.PROPERTIES)
+    if dev['cache']:
+        with st.container(border=True):
+            st.markdown('**Image cash**')
+            st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))

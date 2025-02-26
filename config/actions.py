@@ -6,9 +6,12 @@ Settings for General Action Annotation.
 
 TITLE = "Action Annotator"
 
+TASK = "Actions"
+TIER = 'Actions'
+
+
 def create_object_pool():
     return set()
-
 
 
 TYPES = {
@@ -59,6 +62,3 @@ PREDICATES = {
         {'type': 'ARG2', 'label': '**ARG2**', 'items': ['TEXT'], 'optional': True}],
 
 }
-
-
-DEFAULT_TIER = 'Actions'

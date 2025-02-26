@@ -9,7 +9,6 @@ import os
 import sys
 import json
 import time
-import pathlib
 import datetime
 import pathlib
 import functools
@@ -21,6 +20,7 @@ import streamlit as st
 import streamlit_timeline
 
 from config import default as config
+from util.cache import ImageCache
 
 
 ## Streamlit utilities
@@ -35,6 +35,10 @@ def box(key, options):
         "dummy", [None] + options, key=key, label_visibility='collapsed')
 
 def intialize_session_state():
+    """The session state contains some controls as well as filenames for the output
+    and the log, the current video, the object pool, the list of annoations, the
+    current annotation, the image cash, the current errors and the current messages.
+    """
     video_path = get_video_location_from_command_line()
     if not 'io' in st.session_state:
         basename = os.path.basename(video_path)
@@ -47,16 +51,16 @@ def intialize_session_state():
     if not 'video' in st.session_state:
         st.session_state.video = Video(video_path)
         log(f'Loaded video at {video_path}')
-    if not 'objects' in st.session_state:
-        st.session_state.objects = {
-            'pool': config.create_object_pool(),
-            'inplay': set() }
+    if not 'pool' in st.session_state:
+        st.session_state.pool = ObjectPool()
+        for obj_type, objects in config.OBJECT_POOL.items():
+            st.session_state.pool.add_objects(obj_type, objects)
     if not 'annotations' in st.session_state:
         load_annotations()
     if 'annotation' not in st.session_state:
         st.session_state.annotation = Annotation()
-    if not 'windows' in st.session_state:
-        st.session_state.windows = WindowCache()
+    if not 'cache' in st.session_state:
+        st.session_state.cache = ImageCache()
     if not 'errors' in st.session_state:
         st.session_state.errors = []
     if not 'messages' in st.session_state:
@@ -70,19 +74,16 @@ def session_options():
     return options
 
 def sidebar_display_info():
-    #text = (
-    #    f'Blocks: {len(st.session_state.objects["inplay"])}\n'
-    #    + f'Annotations: {len(st.session_state.annotations)}')
-    text = f'Annotations: {len(st.session_state.annotations)}'
+    text = (
+        f'Task: "{config.TASK}"\n'
+        + f'Annotations: {len(st.session_state.annotations)}')
     st.sidebar.code(text, language='yaml')
 
 def sidebar_display_tool_mode():
     st.sidebar.header('Tool mode', divider=True)
+    modes = ['add annotations', 'show annotations', 'show object pool', 'help', 'dev']
     return st.sidebar.radio(
-        "Tool mode",
-        ['add annotations', 'show annotations', 'show object pool', 'help', 'dev'],
-        key='opt_mode', index=0,
-        label_visibility='collapsed')
+        "Tool mode", modes, key='opt_mode', index=0, label_visibility='collapsed')
 
 def sidebar_display_video_controls():
     st.sidebar.header('Video controls', divider=True)
@@ -135,15 +136,18 @@ def sidebar_display_annotation_list_controls():
 def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
     dev_session = st.sidebar.checkbox('Show session_state', value=False)
+    dev_pool = st.sidebar.checkbox('Show objects pool', value=False)
     dev_log = st.sidebar.checkbox('Show log', value=False)
     dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
     dev_props = st.sidebar.checkbox('Show property specifications', value=False)
-    #dev_ = st.sidebar.checkbox('Show ', value=False)
+    dev_cache = st.sidebar.checkbox('Show image cache', value=False)
     return {
         'session_state': dev_session,
+        'pool': dev_pool,
         'log': dev_log,
         'predicate': dev_pred,
-        'properties':dev_props
+        'properties':dev_props,
+        'cache': dev_cache
         }
 
 def display_video(video: 'Video', width, seconds):
@@ -171,12 +175,6 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     step = datetime.timedelta(milliseconds=100)
     margin = datetime.timedelta(seconds=config.FINE_TUNING_WINDOW)
     d = datetime.datetime(2020, 1, 1, tp.hours, tp.minutes, tp.seconds)
-    if False:
-        # for now we are not showing those other timeframes
-        left_context = tf.slice_to_left(tp.in_milliseconds(), n=4, step=1000)
-        first_frames = tf.slice_to_right(tp.in_milliseconds(), n=5, step=1000)
-        header = 'Window of nine frames around the selected start point or end point'
-        display_frames(st, left_context + first_frames, header=header)
     with st.container(border=False):
         _, col, _ = st.columns([1,30,1])
         return col.slider(
@@ -188,8 +186,8 @@ def display_left_boundary(timeframe: 'TimeFrame'):
     timepoint = timepoint_from_datetime(date)
     step = 100
     ms = timeframe.start.in_milliseconds()
-    add_frames_to_cache(timeframe, ms, step)
-    display_sliding_window(st, st.session_state.windows[ms], timepoint)
+    frames = get_frames(timeframe.video, ms, step)
+    display_sliding_window(st, frames, timepoint)
     st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
 
 def display_right_boundary(timeframe: 'TimeFrame'):
@@ -197,20 +195,28 @@ def display_right_boundary(timeframe: 'TimeFrame'):
     timepoint = timepoint_from_datetime(date)
     step = 100
     ms = timeframe.end.in_milliseconds()
-    add_frames_to_cache(timeframe, ms, step)
-    display_sliding_window(st, st.session_state.windows[ms], timepoint)
+    frames = get_frames(timeframe.video, ms, step)
+    display_sliding_window(st, frames, timepoint)
     st.button("Save ending time", on_click=action_save_ending_time, args=[timepoint])
 
-def add_frames_to_cache(timeframe, ms, step):
-    """Makes sure that the frames needed are in the cache."""
-    if ms not in st.session_state.windows.data:
-        window = timeframe.get_window(ms, n=config.CONTEXT_SIZE, step=step)
-        log(f'Cached frame window at {ms}')
-        st.session_state.windows[ms] = window
-        # TODO. This is to make "Assertion fctx->async_lock" errors less likely,
-        # this is much easier to do than the real fix which seems to require 
-        # dealing with threads.
-        time.sleep(1)
+def get_frames(video, ms: int, step: int):
+    window = get_window(ms, n=config.CONTEXT_SIZE, step=step)
+    frames = [Frame(video, ms) for ms in window]
+    # TODO. This is to make "Assertion fctx->async_lock" errors less likely, this is
+    # much easier to do than the real fix which seems to require dealing with threads.
+    time.sleep(1)
+    return frames
+
+def get_window(milliseconds: int, n=4, step=100) -> list:
+    """Returns a list of timepoints (in milliseconds) in a window around the given
+    timepoint in milliseconds."""
+    timepoints = []
+    for ms in range(n * -step, 0, step):
+        timepoints.append(milliseconds + ms)
+    timepoints.append(milliseconds)
+    for ms in range(0, n * step, step):
+        timepoints.append(milliseconds + ms + step)
+    return timepoints
 
 def display_sliding_window(column, frames, tp, header=None):
     """Display frames horizontally in a box."""
@@ -224,12 +230,13 @@ def display_sliding_window(column, frames, tp, header=None):
                 is_focus = True
             display_frame(cols[i], frame, focus=is_focus)
 
-def display_frames(column, frames, header=None):
+def display_frames(column, frames, cols=10, header=None):
     """Display frames horizontally in a box."""
     box = column.container(border=True)
     if header is not None:
         box.write(header)
-    cols = box.columns(len(frames))
+    #cols = box.columns(len(frames))
+    cols = box.columns(cols)
     for i, frame in enumerate(frames):
         display_frame(cols[i], frame)
 
@@ -306,24 +313,23 @@ def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
         if anno is None:
             return None
-        return Annotation().import_fields(anno)
+        annotation = Annotation().import_fields(anno)
+        st.write(annotation)
+        offsets = list(range(annotation.start, annotation.end, 500))
+        frames = [Frame(st.session_state.video, o) for o in offsets[:10]]
+        display_frames(st, frames, cols=10)
     tiers = sorted(set([a.tier for a in annotations if a.tier]))
     groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
     # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 
-    # screen and the timeline at the bottom is 1.8 cm. The 42 is a mulitplier to get
+    # screen and the timeline at the bottom is 1.8 cm. The 42 is a multiplier to get
     # to a number of pixels.
     height = ((len(tiers) * 1.3) + 1.8) * 42
     options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     timeline_items = get_timeline(annotations)
     try:
         item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
-        #if st.button("What's the date doing there?"):
-        #    st.info(
-        #        "It is a timeline and by default it prints the date. The timeframe"
-        #        " of the entire video starts at the first second of that date.")
         if item:
-            st.write(annotation_pp(item['annotation']))
-            #st.write(annotation_pp(item['annotation']).as_json())
+            annotation_pp(item['annotation'])
     except:
         pass
 
@@ -341,35 +347,15 @@ def display_messages():
         st.info(message)
     st.session_state.messages = []
 
-def display_available_blocks():
-    st.info('**Currently available blocks**')
-    blocks = list(sorted(st.session_state.objects['inplay']))
+def display_available_objects(obj_type: str):
+    st.info(f'**Currently available {obj_type}**')
+    objs =  list(sorted(st.session_state.pool.objects[obj_type]['inplay']))
     with st.container(border=True):
-        st.text('\n'.join(blocks))
+        st.text('\n'.join(objs))
 
 def display_predicate_selector(column, key='action_type'):
     label = create_label('Select predicate')
     return st.pills(label, config.PREDICATES.keys(), key=key)
-
-def display_add_block_select(column):
-    """Displays a selectbox for selecting a block from the pool and returns what
-    the selectbox returns."""
-    return column.multiselect(
-        'Add object from pool',
-        [None] + sorted(st.session_state.objects['pool']),
-        label_visibility='collapsed')
-    #return column.selectbox(
-    #    'Add object from pool',
-    #    [None] + sorted(st.session_state.objects['pool']),
-    #    label_visibility='collapsed')
-
-def display_remove_block_select(column):
-    """Displays a selectbox for removing a block from the pool and returns what
-    the selectbox returns."""
-    return column.selectbox(
-        'Remove object and return to pool',
-        [None] + sorted(st.session_state.objects['inplay']),
-        label_visibility='collapsed')
 
 def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
@@ -385,25 +371,27 @@ def action_change_timeframe():
     st.session_state.annotation.timeframe.start = timepoint_from_time(t1)
     st.session_state.annotation.timeframe.end = timepoint_from_time(t2)
 
-def action_add_block(block: str):
-    add_block(block)
+def action_add_objects(object_type: str, objects: list):
+    """Put the objects in the list in play, that is, move them from the 'available'
+    bin to the 'inplay' bin. After this, they will be available as options."""
+    st.session_state.pool.put_objects_in_play(object_type, objects)
     with open(st.session_state.io['json'], 'a') as fh:
-        fh.write(json.dumps({"add-block": block}) + '\n')
-    message = f'Added {block} and removed it from the pool'
-    st.session_state.messages.append(message)
-    log(message)
+        for obj in objects:
+           fh.write(json.dumps({"add-object": (object_type, obj)}) + '\n')
+           message = f'Added {obj} and removed it from the pool'
+           st.session_state.messages.append(message)
+           log(message)
 
-def action_add_blocks(blocks: list):
-    for block in blocks:
-        action_add_block(block)
-
-def action_remove_block(block: str):
-    remove_block(block)
+def action_remove_objects(object_type: str, objects: list):
+    """Remove the objects in the list from play, that is, move them from the 'inplay'
+    bin to the 'available' bin. After this, they won't be available as options."""
+    st.session_state.pool.remove_objects_from_play(object_type, objects)
     with open(st.session_state.io['json'], 'a') as fh:
-        fh.write(json.dumps({"remove-block": block}) + '\n')
-    message = f'Removed {block} and added it back to the pool'
-    st.session_state.messages.append(message)
-    log(message)
+        for obj in objects:
+           fh.write(json.dumps({"remove-object": (object_type, obj)}) + '\n')
+           message = f'Removed {obj} and returned it to the pool'
+           st.session_state.messages.append(message)
+           log(message)
 
 def action_remove_annotation(annotation_id: str):
     if annotation_id is not None:
@@ -424,19 +412,8 @@ def action_save_ending_time(timepoint: 'TimePoint'):
     st.session_state.opt_tune_end = False
     log(f'Saved ending time {timepoint}')
 
-def add_block(block):
-    st.session_state.objects['inplay'].add(block)
-    try:
-        st.session_state.objects['pool'].remove(block)
-    except KeyError:
-        pass
-
-def remove_block(block):
-    st.session_state.objects['pool'].add(block)
-    try:
-        st.session_state.objects['inplay'].remove(block)
-    except KeyError:
-        pass
+def add_object(object_type: str, obj: str):
+    st.session_state.pool.add_object(object_type, obj)
 
 def remove_annotation(annotation_id: str):
     st.session_state.annotations = \
@@ -470,23 +447,16 @@ def load_annotations():
         annotations = []
         removed_annotations = []
         for raw_annotation in raw_annotations:
-            if 'add-block' in raw_annotation:
-                add_block(raw_annotation['add-block'])
-            elif 'remove-block' in raw_annotation:
-                remove_block(raw_annotation['remove-block'])
+            if 'add-object' in raw_annotation:
+                obj_type, obj = raw_annotation['add-object'][:2]
+                st.session_state.pool.put_object_in_play(obj_type, obj)
+            elif 'remove-object' in raw_annotation:
+                obj_type, obj = raw_annotation['remove-object'][:2]
+                st.session_state.pool.remove_object_from_play(obj_type, obj)
             elif 'remove-annotation' in raw_annotation:
                 removed_annotations.append(raw_annotation['remove-annotation'])
             else:
-                timeframe = TimeFrame(
-                    start=TimePoint(milliseconds=raw_annotation['start']),
-                    end=TimePoint(milliseconds=raw_annotation['end']))
-                annotation = Annotation(
-                    identifier=raw_annotation['identifier'],
-                    video_path=video_path,
-                    timeframe=timeframe,
-                    predicate=raw_annotation['predicate'],
-                    arguments=raw_annotation['arguments'],
-                    properties=raw_annotation.get('properties', {}) )
+                annotation = Annotation().import_fields(raw_annotation)
                 annotations.append(annotation)
         annotations = [a for a in annotations if not a.identifier in removed_annotations]
         st.session_state.annotations = annotations
@@ -530,9 +500,10 @@ def create_label(text: str, size='normalsize'):
     for sizes use the ones defined by LaTeX (small, large, Large, etcetera)."""
     return r"$\textsf{" + f'\\{size} {text}' + "}$"
 
-def current_timeframes():
-    """Returns all timeframes of all the current annotations."""
-    return [annotation.timeframe for annotation in st.session_state.annotations]
+def current_timeframes(task: str) -> list:
+    """Returns all <name, timeframe> pairs of the current annotations in the task."""
+    annos = st.session_state.annotations
+    return [(anno.name, anno.timeframe) for anno in annos if anno.task == task]
 
 def overlap(tf1: 'TimeFrame', tf2: 'TimeFrame'):
     """Return True if two time frames overlap, False otherwise."""
@@ -568,9 +539,11 @@ def import_session_objects(options: list):
     all blocks that are in play need to be inseted."""
     expanded_list = []
     for option in options:
-        if option == '**session_state:blocks**':
-            # sort the blocks because it is a set
-            expanded_list.extend(sorted(st.session_state.objects['inplay']))
+        # if the option is a tuple then the first element is an instruction
+        if isinstance(option, tuple):
+            if option[0] == 'pool':
+                # here the instruction is to retrieve objects from the pool
+                expanded_list.extend(sorted(st.session_state.pool.get_in_play(option[1])))
         else:
             expanded_list.append(option)
     return expanded_list
@@ -580,24 +553,78 @@ def input_signature(input_description: dict):
     return f'{input_description["type"]}{optionality_marker}'
 
 
-
-class WindowCache:
+class ObjectPool:
 
     def __init__(self):
-        self.data = {}
+        self.objects = {}
+        self.object_types = []
 
-    def __len__(self):
-        return len(self.data)
+    def __getattr__(self, attr):
+        if attr in self.object_types:
+            return self.objects[attr]
+        else:
+            raise AttributeError(
+                f"type object '{self.__class__.__name__}' has no attribute '{attr}'")
 
     def __str__(self):
-        points = '{' + ' '.join([str(ms) for ms in self.data.keys()]) + '}'
-        return f'<WindowCache with {len(self)} timepoints  {points}>'
+        def get_count(obj_type: str):
+            return sum(len(v) for v in self.objects[obj_type].values())
+        counts = [f"{ot}={get_count(ot)}" for ot in self.object_types]
+        return f'<ObjectPool {" ".join(counts)}>'
 
-    def __getitem__(self, i):
-        return self.data[i]
+    def get_available(self, obj_type: str):
+        return self.objects[obj_type]['available']
 
-    def __setitem__(self, i, val):
-        self.data[i] = val
+    def get_in_play(self, obj_type: str):
+        return self.objects[obj_type]['inplay']
+
+    def add_object_type(self, obj_type: str):
+        self.objects[obj_type] = {'available': set(), 'inplay': set()}
+        self.object_types.append(obj_type)
+
+    def add_object(self, obj_type: str, obj: str):
+        if obj_type not in self.objects:
+            self.add_object_type(obj_type)
+        self.objects[obj_type]['available'].add(obj)
+
+    def add_objects(self, obj_type: str, objs: list):
+        if obj_type not in self.objects:
+            self.add_object_type(obj_type)
+        self.objects[obj_type]['available'].update(objs)
+
+    def put_objects_in_play(self, obj_type: str, objs: list):
+        for obj in objs:
+            self.put_object_in_play(obj_type, obj)
+
+    def put_object_in_play(self, obj_type: str, obj: str):
+        if obj_type in self.objects:
+            try:
+                self.objects[obj_type]['available'].remove(obj)
+            except KeyError:
+                # TODO: this happens when reloading the annotations
+                # should perhaps reset the pools when reloading
+                log(f'{obj} was already put in play')
+            self.objects[obj_type]['inplay'].add(obj)
+
+    def remove_objects_from_play(self, obj_type: str, objs: list):
+        for obj in objs:
+            self.remove_object_from_play(obj_type, obj)
+
+    def remove_object_from_play(self, obj_type: str, obj: str):
+        if obj_type in self.objects:
+            try:
+                self.objects[obj_type]['inplay'].remove(obj)
+            except KeyError:
+                # TODO: this happens when reloading the annotations
+                # should perhaps reset the pools when reloading
+                log(f'{obj} was already removed from play')
+            self.objects[obj_type]['available'].add(obj)
+
+    def as_json(self):
+        pool = {}
+        for obj_type, data in self.objects.items():
+            pool[obj_type] = data
+        return pool
 
 
 @functools.total_ordering
@@ -722,22 +749,6 @@ class TimeFrame:
     def frame_at(self, milliseconds: int):
         return Frame(self.video, milliseconds)
 
-    def first_frames(self, n=4, step=100):
-        """Return the first n frames (timepoints) in the timeframe, with the specified
-        spacing between each frame."""
-        return self.slice_to_right(self.start.in_milliseconds(), n=n, step=step)
-
-    def last_frames(self, n=4, step=100):
-        """Return the last n frames (timepoints) in the timeframe, with the specified
-        spacing between each frame."""
-        return self.slice_to_left(self.end.in_milliseconds(), n=n, step=step)
-
-    def left_context(self, n=4, step=100):
-        return self.slice_to_left(self.start.in_milliseconds(), n=n, step=step)
-
-    def right_context(self, n=4, step=100):
-        return self.slice_to_right(self.end.in_milliseconds(), n=n, step=step)
-
     def slice_to_left(self, milliseconds: int, n=4, step=100):
         frames = []
         for ms in range(n * -step, 0, step):
@@ -748,17 +759,6 @@ class TimeFrame:
         frames = []
         for ms in range(0, n * step, step):
             frames.append(Frame(self.video, milliseconds + ms))
-        return frames
-
-    def get_window(self, milliseconds: int, n=4, step=100):
-        """Returns a list of all frames in a window around the given timepoint
-        in milliseconds."""
-        frames = []
-        for ms in range(n * -step, 0, step):
-            frames.append(Frame(self.video, milliseconds + ms))
-        frames.append(Frame(self.video, milliseconds))
-        for ms in range(0, n * step, step):
-            frames.append(Frame(self.video, milliseconds + ms + step))
         return frames
         
 
@@ -815,7 +815,12 @@ class Frame:
 
     def __init__(self, vidcap, offset: int):
         self.timepoint = TimePoint(milliseconds=offset)
-        self.image = vidcap.extract_frame(offset)
+        if offset in st.session_state.cache:
+            image = st.session_state.cache[offset]
+        else:
+            image = vidcap.extract_frame(offset)
+            image = st.session_state.cache[offset] = image
+        self.image = image
         self.success = False if self.image is None else True 
 
     def __str__(self):
@@ -839,10 +844,13 @@ class Annotation:
 
     """
 
-    def __init__(self, identifier : str = None, video_path: str = None,
-                 timeframe: TimeFrame = None, properties: dict= {},
+    def __init__(self, task: str = None, tier: str = None,
+                 identifier: str = None, video_path: str = None,
+                 timeframe: TimeFrame = None, properties: dict = {},
                  predicate: str = None, arguments: dict = {}):
         self.identifier = identifier
+        self.task = config.TASK if task is None else task
+        self.tier = tier
         self.video_path = video_path
         self.timeframe = TimeFrame() if timeframe is None else timeframe
         self.predicate = predicate
@@ -853,8 +861,8 @@ class Annotation:
 
     def __str__(self):
         return (
-            f'{self.identifier} {self.name} {self.tier} {self.start} {self.end}' +
-            f' {self.as_formula()} {self.properties}')
+            f'{self.task} {self.tier} {self.identifier} {self.name}'
+            + f' {self.start} {self.end} {self.as_formula()} {self.properties}')
 
     def __eq__(self, other):
         return self.start == other.start
@@ -870,6 +878,8 @@ class Annotation:
 
     def import_fields(self, annotation: dict):
         self.identifier = annotation['identifier']
+        self.task = annotation.get('task')
+        self.tier = annotation.get('tier')
         self.properties = annotation['properties']
         self.predicate = annotation['predicate']
         self.arguments = annotation['arguments']
@@ -880,19 +890,11 @@ class Annotation:
 
     @classmethod
     def columns(cls):
-        return ['id', 'name', 'start', 'end', 'predicate', 'properties']
+        return ['task', 'tier', 'id', 'name', 'start', 'end', 'predicate', 'properties']
 
     @property
     def name(self):
         return self.elan_identifier()
-
-    @property
-    def tier(self):
-        return self.properties.get('tier')
-
-    @tier.setter
-    def tier(self, value):
-        self.properties['tier'] = value
 
     @property
     def start(self):
@@ -908,32 +910,38 @@ class Annotation:
     
     def matches(self, term: str):
         """Returns True if the search term occurs in the identifier, name or formula."""
-        # TODO: should lower case everything
+        if not term:
+            return True
         term = term.lower()
-        if term in self.name.lower() or term in self.identifier.lower():
+        if term in str(self.task).lower() + str(self.tier).lower():
+            return True
+        if term in self.name.lower() + self.identifier.lower():
             return True
         if term in self.as_formula().lower():
             return True
-        for prop, val in self.properties.items():
-            if prop is not None and term in prop.lower():
-                return True
-            if val is not None and term in val.lower():
-                return True
+        if term in str(self.properties).lower():
+            return True
         return False
 
     def is_valid(self):
         """Checker whether the annotation is not missing any required fields."""
         self.errors = []
+        self.check_task_and_tier()
         self.check_start_and_end()
         self.check_predicate_and_arguments()
         self.check_properties()
         return True if not self.errors else False
 
+    def check_task_and_tier(self):
+        if self.task is None:
+            self.errors.append(f'WARNING: the task is not specified')
+        if self.tier is None:
+            self.errors.append(f'WARNING: the tier is not specified')
+
     def check_start_and_end(self):
         """Check the start and end values of the annotation, add the the erros list
         if any errors were found."""
         # TODO: add check for out of bounds start or end
-        errors = []
         if self.start is None:
             self.errors.append(f'WARNING: the start position is not specified')
         if self.end is None:
@@ -991,6 +999,8 @@ class Annotation:
 
     def as_json(self):
         return {
+            'task': self.task,
+            'tier': self.tier,
             'identifier': self.identifier,
             'name': self.name,
             'start': self.start,
@@ -1006,15 +1016,9 @@ class Annotation:
         return f'{self.tier}\t{offsets}\t{self.elan_identifier()}: {self.as_formula()}'
 
     def as_row(self):
-        return [self.identifier, self.name,
+        return [self.task, self.tier, self.identifier, self.name,
                 self.start_as_string(), self.end_as_string(),
                 self.as_formula(), str(self.properties)]
-
-    def as_markdown(self):
-        return (
-            f'**[{self.start} {self.start_as_string()} : {self.end}]** '
-            f'{{ name={self.name} , tier={self.tier} , participant={self.participant} }}\n\n'
-            f'Formula ⟶ {self.as_formula()}')
 
     def start_as_string(self):
         return self.point_as_string(self.start)
@@ -1029,33 +1033,38 @@ class Annotation:
         t = TimePoint(milliseconds=ms)
         return f'{t.mm()}:{t.ss()}.{t.mmm()}'
 
-    def calculate_tier(self, tf: TimeFrame):
-        """Calculate the tier for an annotation based on overlap. This is only relevant
-        for those annotations where we want to map to an ELAN annotation, which requires
-        tiers. There are three cases: (1) tasks where the tier is defined with one of
-        the properties (like the DPIP gesture annotation), (2) tasks where we do not
-        care about tiers and (3) task that assume two tiers with the second to deal with
-        overlapping actions (like the DPIP action annotation task)."""
-        if 'tier' in self.properties:
-            pass
-        elif config.USE_TIERS is False:
-            self.properties['tier'] = config.DEFAULT_TIER
+    def calculate_tier(self, tf: TimeFrame, selected_tier: str):
+        """Calculate the tier for an annotation. There are three cases:
+        1. Tasks with only one tier where the tier is defined in the configuration
+        2. Tasks where the tier is user-defined (like the DPIP gesture annotation)
+        3. Task that assume two tiers where the second is used for annotations that
+           overlap with an annotation in the first tier (like the DPIP action
+           annotation task).
+        """
+        # Case 1: tier comes from the configuration
+        if not config.MULTIPLE_TIERS:
+            self.tier = config.TIER
+        # Case 2: tier comes from the second argument
+        elif config.TIER_IS_DEFINED_BY_USER:
+            self.tier = selected_tier
+        # Case 3: calculate the tier
         else:
             #print('---', tf)
-            taken = current_timeframes()
-            for taken_tf in taken:
+            taken = current_timeframes(self.task)
+            for name, taken_tf in taken:
                 #print('   ', taken_tf, overlap(tf, taken_tf))
                 if overlap(tf, taken_tf):
-                    #print('... overlap found with', taken_tf)
-                    self.properties['tier'] = 'ACTION2'
+                    #print('... overlap found with', name, taken_tf)
+                    self.tier = config.TIERS[1]
                     return
             #print('... no overlap found')
-            self.properties['tier'] = 'ACTION1'
+            self.tier = config.TIERS[0]
 
     def copy(self):
         return Annotation(
+            task=self.task,
+            tier=self.tier,
             identifier=self.identifier,
-            video_path=self.video_path,
             timeframe=self.timeframe.copy(),
             predicate=self.predicate,
             arguments=deepcopy(self.arguments),
