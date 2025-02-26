@@ -861,7 +861,7 @@ class Annotation:
 
     def __str__(self):
         return (
-            f'{self.task} {self.tier} {self.identifier} {self.name} {self.tier}'
+            f'{self.task} {self.tier} {self.identifier} {self.name}'
             + f' {self.start} {self.end} {self.as_formula()} {self.properties}')
 
     def __eq__(self, other):
