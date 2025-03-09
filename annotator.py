@@ -7,7 +7,7 @@ Originally created for Action and Gesture annotation for the TRACE project.
 To run this:
 
 $ pip install -r requirements.txt
-$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG>
+$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
 
 """
 
@@ -27,12 +27,12 @@ DEBUG = False
 st.set_page_config(page_title=config.TITLE, layout="wide")
 
 utils.intialize_session_state()
-video =  st.session_state.video
+video = st.session_state.video
 
 
-## SIDEBAR
+# SIDEBAR
 
-# The sidebar prints some info, controls the annotation mode and shows video 
+# The sidebar prints some info, controls the annotation mode and shows video
 # controls and other controls
 
 st.sidebar.title(config.TITLE)
@@ -46,6 +46,7 @@ if mode == 'show annotations':
     list_settings = utils.sidebar_display_annotation_list_controls()
 if mode == 'dev':
     dev = utils.sidebar_display_dev_controls()
+    clear_cache = st.sidebar.button('Clear image cache', on_click=utils.action_clear_image_cache)
 
 if DEBUG:
     st.write(utils.session_options())
@@ -57,12 +58,12 @@ def display_tier():
         'select-tier', [None] + config.TIERS, label_visibility='collapsed')
 
 
-## MAIN CONTENT
+# MAIN CONTENT
 
 if mode == 'add annotations':
 
     st.title('Add annotations')
-    
+
     utils.display_video(video, width, offset.in_seconds())
 
     # The box with timeframe settings
@@ -103,11 +104,11 @@ if mode == 'add annotations':
     annotation.properties = props
     annotation.calculate_tier(tf, selected_tier)
 
-    # Display the updated annotation with a save button or a warning    
+    # Display the updated annotation with a save button or a warning
     with st.container(border=True):
         utils.display_annotation(annotation, add_settings)
     if annotation.is_valid():
-            st.button("Save Annotation", on_click=annotation.save)
+        st.button("Save Annotation", on_click=annotation.save)
     else:
         st.markdown(
             "*Cannot add annotation yet because not all required fields have"
@@ -174,7 +175,7 @@ if mode == 'show object pool':
     # c2.button("Add", on_click=utils.action_add_blocks, args=[blocks_to_add])
     # block_to_remove = utils.display_remove_block_select(c3)
     # c4.button("Remove", on_click=utils.action_remove_block, args=[block_to_remove])
-    
+
 
 if mode == 'help':
 
@@ -186,28 +187,28 @@ if mode == 'help':
 if mode == 'dev':
 
     st.title('Developer goodies')
-    if dev['session_state']:
+    if dev == 'Show session_state':
         with st.container(border=True):
             st.markdown('**Session State**')
             st.write(st.session_state)
-    if dev['pool']:
+    elif dev == 'Show objects pool':
         with st.container(border=True):
             st.markdown('**Objects Pool**')
             st.write(st.session_state.pool.as_json())
-    if dev['log']:
+    elif dev == 'Show log':
         with open(st.session_state.io['log']) as fh:
             with st.container(border=True):
                 st.markdown('**Log contents**')
                 st.code(fh.read(), language=None)
-    if dev['predicate']:
+    elif dev == 'Show predicate specifications':
         with st.container(border=True):
             st.markdown('**Predicate-argument specifications**')
             st.write(config.PREDICATES)
-    if dev['properties']:
+    elif dev == 'Show property specifications':
         with st.container(border=True):
             st.markdown('**Property specifications**')
             st.write(config.PROPERTIES)
-    if dev['cache']:
+    elif dev == 'Show image cache':
         with st.container(border=True):
             st.markdown('**Image cash**')
             st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))

@@ -25,3 +25,5 @@ class ImageCache:
     def __contains__(self, item):
         return item in self.data
 
+    def reset(self):
+        self.data = {}
