@@ -1,6 +1,6 @@
 """
 
-Settings for DPIP Action Annotation. 
+Settings for DPIP Action Annotation.
 
 Overwrites settings in config.py.
 
@@ -20,7 +20,7 @@ for size in ('Large', 'Small'):
 OBJECT_POOL['people'] = ['sally', 'sue', 'jack']
 
 
-## Definitions that determine the the predicate creation widgets and their options
+# Definitions that determine the the predicate creation widgets and their options
 
 ABSOLUTE_LOCATIONS = ['Base', 'FirstLayerAboveBase', 'SecondLayerAboveBase', 'TopLayer']
 

@@ -34,7 +34,7 @@ The [README.md](../README.md) file in this repository has a few more details on 
 To start the tool do
 
 ```shell
-streamlit run dpip_action_annotator.py LOCAL_PATH/VIDEO_FILE.mp4 CONFIG_FILE
+streamlit run annotator.py LOCAL_PATH/VIDEO_FILE.mp4 CONFIG_FILE [debug]
 ```
 
 When you run this, a browser window should pop up automatically. If not, you can point your browser at [http://localhost:8501/](http://localhost:8501/).

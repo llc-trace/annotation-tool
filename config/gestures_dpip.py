@@ -1,6 +1,6 @@
 """
 
-Settings for DPIP Gesture Annotation. 
+Settings for DPIP Gesture Annotation.
 
 Overwrites settings in config.py.
 
@@ -39,5 +39,6 @@ PREDICATES = {
 
 PROPERTIES = [
 
-    {'type': 'comment', 'label': '**Comment (optional)**', 'items': ['TEXT'], 'optional': True}
+    {'type': 'comment', 'label': '**Comment (optional)**',
+     'items': ['TEXT'], 'optional': True}
 ]

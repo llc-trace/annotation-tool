@@ -16,9 +16,12 @@ TITLE = "Action Annotator"
 DEFAULT_VIDEO_WIDTH = 50    # video width in percentage of total width
 DEFAULT_IMAGE_WIDTH = 100   # image width in pixels
 
-# Number of frames printed from the context. The only numbers that make sense
-# here are from 3 to probably 6
+# Number of frames printed from the context window. The only numbers that make
+# sense here are from 3 to probably 6.
 CONTEXT_SIZE = 5
+
+# Spacing between frames in the context window, in milliseconds.
+CONTEXT_STEP = 100
 
 # This determines how many seconds to the left and right the fine-tuning slider
 # includes.
@@ -28,9 +31,7 @@ FINE_TUNING_WINDOW = 0.5
 # HH:mm:ss, mm:ss.SSS and HH:mm:ss.SSS, which add hours and/or milliseconds.
 SLIDER_TIME_FORMAT = 'mm:ss:SSS'
 
-# Needed when initializing the session state
-def create_object_pool():
-    return set()
+# Empty object pool by default
 OBJECT_POOL = {}
 
 # These should be overruled by the task specific settings (other wise there would
@@ -50,12 +51,12 @@ TASK = 'Main'
 # specific configuration.
 TIER = 'Default'
 
-# By default, use only one tier and don't let the tier be defined by the 
+# By default, use only one tier and don't let the tier be defined by the
 # annotator but by the configuration file.
 MULTIPLE_TIERS = False
 TIER_IS_DEFINED_BY_USER = False
 
-## Loading the task-specific settings which overrule what is in this file
+# Loading the task-specific settings which overrule what is in this file
 if len(sys.argv) > 2:
     user_settings = open(sys.argv[2]).read()
     exec(user_settings)

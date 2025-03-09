@@ -7,11 +7,12 @@ Originally created for Action and Gesture annotation for the TRACE project.
 To run this:
 
 $ pip install -r requirements.txt
-$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG>
+$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
 
 """
 
 
+import io
 import json
 import time
 
@@ -21,18 +22,15 @@ from config import default as config
 import utils
 
 
-DEBUG = True
-DEBUG = False
-
 st.set_page_config(page_title=config.TITLE, layout="wide")
 
 utils.intialize_session_state()
-video =  st.session_state.video
+video = st.session_state.video
 
 
-## SIDEBAR
+# SIDEBAR
 
-# The sidebar prints some info, controls the annotation mode and shows video 
+# The sidebar prints some info, controls the annotation mode and shows video
 # controls and other controls
 
 st.sidebar.title(config.TITLE)
@@ -46,23 +44,26 @@ if mode == 'show annotations':
     list_settings = utils.sidebar_display_annotation_list_controls()
 if mode == 'dev':
     dev = utils.sidebar_display_dev_controls()
-
-if DEBUG:
-    st.write(utils.session_options())
-
-
-def display_tier():
-    st.write('**Tier**')
-    return st.selectbox(
-        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
+    clear_cache = st.sidebar.button(
+        'Clear image cache', on_click=utils.action_clear_image_cache)
 
 
-## MAIN CONTENT
+def read_config_file(filename: str):
+    # do not use this till it does a decent job of parsing the config file
+    stream = io.StringIO()
+    with open(filename) as fh:
+        for line in fh:
+            if not line.strip().startswith('#'):
+                stream.write(line)
+        return stream.getvalue()
+
+
+# MAIN CONTENT
 
 if mode == 'add annotations':
 
     st.title('Add annotations')
-    
+
     utils.display_video(video, width, offset.in_seconds())
 
     # The box with timeframe settings
@@ -103,11 +104,11 @@ if mode == 'add annotations':
     annotation.properties = props
     annotation.calculate_tier(tf, selected_tier)
 
-    # Display the updated annotation with a save button or a warning    
+    # Display the updated annotation with a save button or a warning
     with st.container(border=True):
         utils.display_annotation(annotation, add_settings)
     if annotation.is_valid():
-            st.button("Save Annotation", on_click=annotation.save)
+        st.button("Save Annotation", on_click=annotation.save)
     else:
         st.markdown(
             "*Cannot add annotation yet because not all required fields have"
@@ -128,7 +129,10 @@ if mode == 'show annotations':
     if not list_settings['hide-controls']:
         with st.container(border=True):
             annotation_id = utils.display_remove_annotation_select()
-            st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
+            st.button(
+                'Remove',
+                on_click=utils.action_remove_annotation,
+                args=[annotation_id])
         reloaded = st.button('Reload annotations', on_click=utils.load_annotations)
         if reloaded:
             st.info('Annotations were reloaded')
@@ -164,7 +168,10 @@ if mode == 'show object pool':
                 st.write(label)
                 c3, c4, _ = st.columns([4, 2, 6])
                 selected = c3.multiselect(label, inplay, label_visibility='collapsed')
-                c4.button(f"Remove {obj_type}", on_click=utils.action_remove_objects, args=[obj_type, selected])
+                c4.button(
+                    f"Remove {obj_type}",
+                    on_click=utils.action_remove_objects,
+                    args=[obj_type, selected])
                 utils.display_messages()
                 utils.display_available_objects(obj_type)
     else:
@@ -174,7 +181,7 @@ if mode == 'show object pool':
     # c2.button("Add", on_click=utils.action_add_blocks, args=[blocks_to_add])
     # block_to_remove = utils.display_remove_block_select(c3)
     # c4.button("Remove", on_click=utils.action_remove_block, args=[block_to_remove])
-    
+
 
 if mode == 'help':
 
@@ -186,28 +193,37 @@ if mode == 'help':
 if mode == 'dev':
 
     st.title('Developer goodies')
-    if dev['session_state']:
+    if dev == 'Show session_state':
         with st.container(border=True):
             st.markdown('**Session State**')
             st.write(st.session_state)
-    if dev['pool']:
+    elif dev == 'Show config settings':
+        with st.container(border=True):
+            st.markdown('#### Configurations settings - default')
+            with open('config/default.py') as fh:
+                st.code(fh.read(), language='python')
+        with st.container(border=True):
+            st.markdown('#### Configurations settings - task specific')
+            with open(st.session_state.io['config_path']) as fh:
+                st.code(fh.read(), language='python')
+    elif dev == 'Show objects pool':
         with st.container(border=True):
             st.markdown('**Objects Pool**')
             st.write(st.session_state.pool.as_json())
-    if dev['log']:
+    elif dev == 'Show log':
         with open(st.session_state.io['log']) as fh:
             with st.container(border=True):
                 st.markdown('**Log contents**')
                 st.code(fh.read(), language=None)
-    if dev['predicate']:
+    elif dev == 'Show predicate specifications':
         with st.container(border=True):
             st.markdown('**Predicate-argument specifications**')
             st.write(config.PREDICATES)
-    if dev['properties']:
+    elif dev == 'Show property specifications':
         with st.container(border=True):
             st.markdown('**Property specifications**')
             st.write(config.PROPERTIES)
-    if dev['cache']:
+    elif dev == 'Show image cache':
         with st.container(border=True):
             st.markdown('**Image cash**')
             st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))

@@ -12,9 +12,11 @@ import time
 import datetime
 import pathlib
 import functools
+import asyncio
 from copy import deepcopy
 
 import cv2
+import numpy as np
 import pandas as pd
 import streamlit as st
 import streamlit_timeline
@@ -23,8 +25,8 @@ from config import default as config
 from util.cache import ImageCache
 
 
-## Streamlit utilities
-## ----------------------------------------------------------------------------
+# Streamlit utilities
+# ----------------------------------------------------------------------------
 
 def text(key, value=None):
     return st.text_input(
@@ -39,31 +41,37 @@ def intialize_session_state():
     and the log, the current video, the object pool, the list of annoations, the
     current annotation, the image cash, the current errors and the current messages.
     """
-    video_path = get_video_location_from_command_line()
-    if not 'io' in st.session_state:
+    options = get_command_line_options()
+    video_path = options['video_path']
+    config_path = options['config_path']
+    debug = options['debug']
+    st.session_state.debug = debug
+    if 'io' not in st.session_state:
         basename = os.path.basename(video_path)
         if basename.endswith('.mp4'):
             basename = basename[:-4]
         st.session_state.io = {
+            'video_path': video_path,
+            'config_path': config_path,
             'json': f'data/{basename}.json',
             'elan': f'data/{basename}.tab',
             'log': f'data/{basename}.log'}
-    if not 'video' in st.session_state:
+    if 'video' not in st.session_state:
         st.session_state.video = Video(video_path)
         log(f'Loaded video at {video_path}')
-    if not 'pool' in st.session_state:
+    if 'pool' not in st.session_state:
         st.session_state.pool = ObjectPool()
         for obj_type, objects in config.OBJECT_POOL.items():
             st.session_state.pool.add_objects(obj_type, objects)
-    if not 'annotations' in st.session_state:
+    if 'annotations' not in st.session_state:
         load_annotations()
     if 'annotation' not in st.session_state:
         st.session_state.annotation = Annotation()
-    if not 'cache' in st.session_state:
+    if 'cache' not in st.session_state:
         st.session_state.cache = ImageCache()
-    if not 'errors' in st.session_state:
+    if 'errors' not in st.session_state:
         st.session_state.errors = []
-    if not 'messages' in st.session_state:
+    if 'messages' not in st.session_state:
         st.session_state.messages = []
 
 def session_options():
@@ -94,7 +102,7 @@ def sidebar_display_video_controls():
 
 def sidebar_display_seek_inputs():
     st.sidebar.markdown("Seek offset in video (hours, minutes, seconds, milliseconds)")
-    col1, col2, col3, col4, _ = st.sidebar.columns([4,4,4,6,4])
+    col1, col2, col3, col4, _ = st.sidebar.columns([4, 4, 4, 6, 4])
     hours = col1.number_input('hh', min_value=0, label_visibility="collapsed")
     minutes = col2.number_input('mm', min_value=0, label_visibility="collapsed")
     seconds = col3.number_input('ss', min_value=0, label_visibility="collapsed")
@@ -114,7 +122,7 @@ def sidebar_display_annotation_controls():
     tune_start = st.sidebar.checkbox('Fine-tune start point', key='opt_tune_start')
     tune_end = st.sidebar.checkbox('Fine-tune end point', key='opt_tune_end')
     show_elan = st.sidebar.checkbox('Show ELAN', key='opt_show_elan')
-    show_json = st.sidebar.checkbox('Show JSON',  key='opt_show_json')
+    show_json = st.sidebar.checkbox('Show JSON', key='opt_show_json')
     return {
         'tune-start': tune_start,
         'tune-end': tune_end,
@@ -123,10 +131,10 @@ def sidebar_display_annotation_controls():
 
 def sidebar_display_annotation_list_controls():
     st.sidebar.header('Annotation list controls', divider=True)
-    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video', value=True)
-    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls', value=True)
-    timeline = st.sidebar.checkbox('Hide timeline',  key='opt_list_hide_timeline')
-    table = st.sidebar.checkbox('Hide table',  key='opt_list_hide_table')
+    video = st.sidebar.checkbox('Hide video', key='opt_list_hide_video', value=True)
+    controls = st.sidebar.checkbox('Hide controls', key='opt_list_hide_controls', value=True)
+    timeline = st.sidebar.checkbox('Hide timeline', key='opt_list_hide_timeline')
+    table = st.sidebar.checkbox('Hide table', key='opt_list_hide_table')
     return {
         'hide-video': video,
         'hide-controls': controls,
@@ -135,20 +143,11 @@ def sidebar_display_annotation_list_controls():
 
 def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
-    dev_session = st.sidebar.checkbox('Show session_state', value=False)
-    dev_pool = st.sidebar.checkbox('Show objects pool', value=False)
-    dev_log = st.sidebar.checkbox('Show log', value=False)
-    dev_pred = st.sidebar.checkbox('Show predicate specifications', value=False)
-    dev_props = st.sidebar.checkbox('Show property specifications', value=False)
-    dev_cache = st.sidebar.checkbox('Show image cache', value=False)
-    return {
-        'session_state': dev_session,
-        'pool': dev_pool,
-        'log': dev_log,
-        'predicate': dev_pred,
-        'properties':dev_props,
-        'cache': dev_cache
-        }
+    options = ['Show session_state', 'Show config settings', 'Show log',
+               'Show objects pool', 'Show predicate specifications',
+               'Show property specifications', 'Show image cache']
+    dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
+    return dev_option
 
 def display_video(video: 'Video', width, seconds):
     st.info(video.filename)
@@ -170,13 +169,13 @@ def display_timeframe_slider():
                      format=config.SLIDER_TIME_FORMAT)
 
 def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
-    # TODO: may want to pull the first two lines into a configuration 
+    # TODO: may want to pull the first two lines into a configuration
     # file or into the user options
     step = datetime.timedelta(milliseconds=100)
     margin = datetime.timedelta(seconds=config.FINE_TUNING_WINDOW)
     d = datetime.datetime(2020, 1, 1, tp.hours, tp.minutes, tp.seconds)
     with st.container(border=False):
-        _, col, _ = st.columns([1,30,1])
+        _, col, _ = st.columns([1, 30, 1])
         return col.slider(
             create_label(label), d - margin, d + margin,
             value=d, format=config.SLIDER_TIME_FORMAT, step=step)
@@ -184,30 +183,26 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
     timepoint = timepoint_from_datetime(date)
-    step = 100
     ms = timeframe.start.in_milliseconds()
-    frames = get_frames(timeframe.video, ms, step)
+    frames = collect_frames(timeframe.video, get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
+    st.button(
+        "Save starting time",
+        on_click=action_save_starting_time,
+        args=[timepoint])
 
 def display_right_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the ending point', timeframe, timeframe.end)
     timepoint = timepoint_from_datetime(date)
-    step = 100
     ms = timeframe.end.in_milliseconds()
-    frames = get_frames(timeframe.video, ms, step)
+    frames = collect_frames(timeframe.video, get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button("Save ending time", on_click=action_save_ending_time, args=[timepoint])
+    st.button(
+        "Save ending time",
+        on_click=action_save_ending_time,
+        args=[timepoint])
 
-def get_frames(video, ms: int, step: int):
-    window = get_window(ms, n=config.CONTEXT_SIZE, step=step)
-    frames = [Frame(video, ms) for ms in window]
-    # TODO. This is to make "Assertion fctx->async_lock" errors less likely, this is
-    # much easier to do than the real fix which seems to require dealing with threads.
-    time.sleep(1)
-    return frames
-
-def get_window(milliseconds: int, n=4, step=100) -> list:
+def get_window(milliseconds: int, n=config.CONTEXT_SIZE, step=config.CONTEXT_STEP) -> list:
     """Returns a list of timepoints (in milliseconds) in a window around the given
     timepoint in milliseconds."""
     timepoints = []
@@ -217,6 +212,11 @@ def get_window(milliseconds: int, n=4, step=100) -> list:
     for ms in range(0, n * step, step):
         timepoints.append(milliseconds + ms + step)
     return timepoints
+
+def display_tier():
+    st.write('**Tier**')
+    return st.selectbox(
+        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
 
 def display_sliding_window(column, frames, tp, header=None):
     """Display frames horizontally in a box."""
@@ -235,7 +235,6 @@ def display_frames(column, frames, cols=10, header=None):
     box = column.container(border=True)
     if header is not None:
         box.write(header)
-    #cols = box.columns(len(frames))
     cols = box.columns(cols)
     for i, frame in enumerate(frames):
         display_frame(cols[i], frame)
@@ -285,7 +284,7 @@ def display_inputs(predicate: str, inputs: list):
                 elif isinstance(item, list):
                     item = import_session_objects(item)
                     with cols[j]:
-                        args[i][j] = box(f'{i}:{j}-{type}', item) 
+                        args[i][j] = box(f'{i}:{j}-{type}', item)
             inputs_dict[type] = args[i]
     return inputs_dict
 
@@ -316,13 +315,13 @@ def display_annotations_timeline(annotations: list):
         annotation = Annotation().import_fields(anno)
         st.write(annotation)
         offsets = list(range(annotation.start, annotation.end, 500))
-        frames = [Frame(st.session_state.video, o) for o in offsets[:10]]
+        frames = collect_frames(st.session_state.video, offsets[:10])
         display_frames(st, frames, cols=10)
     tiers = sorted(set([a.tier for a in annotations if a.tier]))
     groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
-    # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the 
+    # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the
     # screen and the timeline at the bottom is 1.8 cm. The 42 is a multiplier to get
-    # to a number of pixels.
+    # to an agreeable number of pixels.
     height = ((len(tiers) * 1.3) + 1.8) * 42
     options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     timeline_items = get_timeline(annotations)
@@ -330,7 +329,7 @@ def display_annotations_timeline(annotations: list):
         item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
         if item:
             annotation_pp(item['annotation'])
-    except:
+    except Exception:
         pass
 
 def display_annotations_table(annotations: list):
@@ -349,7 +348,7 @@ def display_messages():
 
 def display_available_objects(obj_type: str):
     st.info(f'**Currently available {obj_type}**')
-    objs =  list(sorted(st.session_state.pool.objects[obj_type]['inplay']))
+    objs = list(sorted(st.session_state.pool.objects[obj_type]['inplay']))
     with st.container(border=True):
         st.text('\n'.join(objs))
 
@@ -361,8 +360,11 @@ def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
 
 
-## Actions
-## ----------------------------------------------------------------------------
+# Actions
+# ----------------------------------------------------------------------------
+
+def action_clear_image_cache():
+    st.session_state.cache.reset()
 
 def action_change_timeframe():
     t1, t2 = st.session_state.opt_timeframe
@@ -377,10 +379,10 @@ def action_add_objects(object_type: str, objects: list):
     st.session_state.pool.put_objects_in_play(object_type, objects)
     with open(st.session_state.io['json'], 'a') as fh:
         for obj in objects:
-           fh.write(json.dumps({"add-object": (object_type, obj)}) + '\n')
-           message = f'Added {obj} and removed it from the pool'
-           st.session_state.messages.append(message)
-           log(message)
+            fh.write(json.dumps({"add-object": (object_type, obj)}) + '\n')
+            message = f'Added {obj} and removed it from the pool'
+            st.session_state.messages.append(message)
+            log(message)
 
 def action_remove_objects(object_type: str, objects: list):
     """Remove the objects in the list from play, that is, move them from the 'inplay'
@@ -388,10 +390,10 @@ def action_remove_objects(object_type: str, objects: list):
     st.session_state.pool.remove_objects_from_play(object_type, objects)
     with open(st.session_state.io['json'], 'a') as fh:
         for obj in objects:
-           fh.write(json.dumps({"remove-object": (object_type, obj)}) + '\n')
-           message = f'Removed {obj} and returned it to the pool'
-           st.session_state.messages.append(message)
-           log(message)
+            fh.write(json.dumps({"remove-object": (object_type, obj)}) + '\n')
+            message = f'Removed {obj} and returned it to the pool'
+            st.session_state.messages.append(message)
+            log(message)
 
 def action_remove_annotation(annotation_id: str):
     if annotation_id is not None:
@@ -420,8 +422,8 @@ def remove_annotation(annotation_id: str):
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
 
 
-## Various other utilities
-## ----------------------------------------------------------------------------
+# Various other utilities
+# ----------------------------------------------------------------------------
 
 def get_timeline(annotations: list) -> list:
     basetime = '1999-01-01T00'
@@ -434,8 +436,11 @@ def get_timeline(annotations: list) -> list:
             "annotation": annotation.as_json()})
     return items
 
-def get_video_location_from_command_line() -> str:
-    return sys.argv[1] if len(sys.argv) > 1 else None
+def get_command_line_options() -> dict:
+    video_path = sys.argv[1]
+    config_path = sys.argv[2]
+    debug = True if (len(sys.argv) > 3 and sys.argv[3] == 'debug') else False
+    return {'video_path': video_path, 'config_path': config_path, 'debug': debug}
 
 def load_annotations():
     filename = st.session_state.io['json']
@@ -458,9 +463,15 @@ def load_annotations():
             else:
                 annotation = Annotation().import_fields(raw_annotation)
                 annotations.append(annotation)
-        annotations = [a for a in annotations if not a.identifier in removed_annotations]
+        annotations = [a for a in annotations if a.identifier not in removed_annotations]
         st.session_state.annotations = annotations
         log(f'Loaded annotations from {filename}')
+
+def collect_frames(video, frame_offsets: list):
+    # TODO: probably add this to the video class
+    fc = FrameCollector(video, st.session_state.cache)
+    frames = asyncio.run(fc.get_frames(frame_offsets))
+    return frames
 
 def annotation_identifiers():
     return [annotation.identifier for annotation in st.session_state.annotations]
@@ -491,9 +502,20 @@ def timepoint_from_time(t: datetime.time):
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')
 
-def log(text):
+def log(text: str):
     with open(st.session_state.io['log'], 'a') as fh:
-        fh.write(f'{timestamp()}\t{text}\n')
+        fh.write(f'INFO  {timestamp()}\t{text}\n')
+
+def debug(header: str, body: str = ''):
+    if st.session_state.debug:
+        ts = timestamp()
+        with open(st.session_state.io['log'], 'a') as fh:
+            fh.write(f'DEBUG {ts}\t{header}\n')
+            print(f'DEBUG {ts}\t{header}')
+            if body:
+                print(body)
+                for line in body.split('\n'):
+                    fh.write(f'DEBUG {line}\n')
 
 def create_label(text: str, size='normalsize'):
     """Return formatted text that can be used as a label of a particular size,
@@ -636,9 +658,9 @@ class TimePoint:
     normalize itself to cap seconds and minutes at 59 though."""
 
     def __init__(self, hours=0, minutes=0, seconds=0, milliseconds=0):
-        #if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
+        # if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
         #    raise ValueError('Values need to be >= 0')
-        #print('===', hours, minutes, seconds, milliseconds)
+        # print('===', hours, minutes, seconds, milliseconds)
         self.hours = hours
         self.minutes = minutes
         self.seconds = seconds
@@ -683,9 +705,9 @@ class TimePoint:
     def normalize(self):
         """Normalize values so that millisseconds < 1000, and seconds and minutes
         are < 60. Normalization leaves the hours alone"""
-        #print('>>>',self)
-        #print('---', type(self.seconds), type(self.milliseconds))
-        #print('---', self.seconds, self.milliseconds)
+        # print('>>>',self)
+        # print('---', type(self.seconds), type(self.milliseconds))
+        # print('---', self.seconds, self.milliseconds)
         if self.milliseconds > 999:
             seconds = int(self.milliseconds / 1000)
             self.seconds += seconds
@@ -747,20 +769,16 @@ class TimeFrame:
         self.end.adjust_milliseconds(milliseconds)
 
     def frame_at(self, milliseconds: int):
-        return Frame(self.video, milliseconds)
+        # TODO: did not feel the need to use FrameCollector, could be wrong
+        # TODO: this seems to be deprecated and should be on Video class anyway
+        return Frame(self.video, milliseconds, st.session_state.cache)
 
     def slice_to_left(self, milliseconds: int, n=4, step=100):
-        frames = []
-        for ms in range(n * -step, 0, step):
-            frames.append(Frame(self.video, milliseconds + ms))
-        return frames
+        return collect_frames(video, range(n * -step, 0, step))
 
     def slice_to_right(self, milliseconds: int, n=4, step=100):
-        frames = []
-        for ms in range(0, n * step, step):
-            frames.append(Frame(self.video, milliseconds + ms))
-        return frames
-        
+        return collect_frames(video, range(0, n * step, step))
+
 
 class Video:
 
@@ -813,22 +831,66 @@ class Frame:
 
     """Class to wrap the frame extracted with vidcap.read()."""
 
-    def __init__(self, vidcap, offset: int):
+    def __init__(self, vidcap, cache: ImageCache, offset: int):
+        self.vidcap = vidcap
         self.timepoint = TimePoint(milliseconds=offset)
-        if offset in st.session_state.cache:
-            image = st.session_state.cache[offset]
+        if offset in cache:
+            image = cache[offset]
         else:
-            image = vidcap.extract_frame(offset)
-            image = st.session_state.cache[offset] = image
+            image = self.get_frame(offset)
+            cache[offset] = image
         self.image = image
-        self.success = False if self.image is None else True 
+        self.success = False if self.image is None else True
 
     def __str__(self):
         timestamp = self.timepoint.timestamp()
         return f'<{self.__class__.__name__} t={timestamp} image={self.success}>'
 
+    def get_frame(self, offset: int) -> np.ndarray:
+        debug(f'Extracting frame at {offset} from video')
+        return self.vidcap.extract_frame(offset)
+
     def caption(self, short=True):
         return self.timepoint.timestamp(short=short)
+
+
+class FrameCollector:
+
+    """Class that wraps frame retrieval from the video in asynchronous calls."""
+
+    # TODO: may want to use an asyncio timeout. Some errors may make this code hang
+    # and just not return anything. See the following for some background:
+    # https://betterstack.com/community/guides/scaling-python/python-timeouts/
+
+    # TODO: This all seemed to do well, and it improves the speed, but it does not
+    # completely fix the problem since I just got this crash again
+    #
+    # 2025-03-08 18:42:52.069 MediaFileHandler: Missing file bf892f873e98eb1336058d0e9a241af82149135e7931e1535b8694f3.jpg
+    # Assertion fctx->async_lock failed at libavcodec/pthread_frame.c:164
+    # Abort trap: 6
+    #
+    # Must put in some logging statements to see whether I can trace where this happens,
+    # and maybe try some exception handling if that is an option in these cases.
+
+    def __init__(self, vidcap, cache: ImageCache):
+        self.vidcap = vidcap
+        self.cache = cache
+        self.frames = []
+
+    async def get_frames(self, timepoints: list, timing=False):
+        debug(f'FrameCollector.get_frames({str(timepoints)})')
+        t0 = time.time()
+        self.timepoints = timepoints
+        calls = (self.get_frame(tp) for tp in timepoints)
+        debug('    await asyncio.gather(*calls) STARTED')
+        results = await asyncio.gather(*calls)
+        debug('    await asyncio.gather(*calls) ENDED')
+        if timing:
+            print(f"Got {len(timepoints)} frames in {time.time() - t0} seconds")
+        return results
+
+    async def get_frame(self, tp: int):
+        return Frame(self.vidcap, self.cache, tp)
 
 
 @functools.total_ordering
@@ -907,7 +969,7 @@ class Annotation:
         if self.timeframe is None or self.timeframe.end is None:
             return None
         return self.timeframe.end.in_milliseconds()
-    
+
     def matches(self, term: str):
         """Returns True if the search term occurs in the identifier, name or formula."""
         if not term:
@@ -971,30 +1033,30 @@ class Annotation:
         properties_idx = { p['type']: p for p in config.PROPERTIES }
         for prop, value in self.properties.items():
             # There is something iffy here with the tier property which can be in
-            # the properties, but does not need to be in the defined properties 
+            # the properties, but does not need to be in the defined properties
             if prop not in properties_idx:
                 continue
             optional = properties_idx[prop].get('optional', False)
             if not value and not optional:
                 self.errors.append(f'WARNING: property "{prop}"" is not specified')
-   
+
     def elan_identifier(self):
         """Cobble together an Elan "identifier" from the identifier and the start
         time. The elan identifier is more like a summary, using a prefix plus the
         minutes and seconds from the start timepoint, it is not required to be
         unique."""
         try:
-            # TODO: this may be different for some tasks if we don't use 
+            # TODO: this may be different for some tasks if we don't use
             # 'predicate' for that field
             prefix = 'X' if self.predicate is None else self.predicate[0]
             tp = TimePoint(milliseconds=self.start)
-            offset= f'{tp.mm()}{tp.ss()}'
+            offset = f'{tp.mm()}{tp.ss()}'
             return f'{prefix}{offset}'
-        except:
+        except Exception:
             return None
 
     def as_formula(self):
-        formatted_args = ', '.join([f'{a}="{v}"' for a,v in self.arguments.items()])
+        formatted_args = ', '.join([f'{a}="{v}"' for a, v in self.arguments.items()])
         return f'{str(self.predicate)}({formatted_args})'
 
     def as_json(self):
@@ -1049,15 +1111,11 @@ class Annotation:
             self.tier = selected_tier
         # Case 3: calculate the tier
         else:
-            #print('---', tf)
             taken = current_timeframes(self.task)
             for name, taken_tf in taken:
-                #print('   ', taken_tf, overlap(tf, taken_tf))
                 if overlap(tf, taken_tf):
-                    #print('... overlap found with', name, taken_tf)
                     self.tier = config.TIERS[1]
                     return
-            #print('... no overlap found')
             self.tier = config.TIERS[0]
 
     def copy(self):

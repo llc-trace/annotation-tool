@@ -2,7 +2,7 @@
 
 class ImageCache:
 
-    """Cache all images retrieved from the video. The images are indexed on the 
+    """Cache all images retrieved from the video. The images are indexed on the
     offset in milliseconds in the video. Values are what is returned by the method
     cv2.VideoCapture().read(), which is a Numpy array."""
 
@@ -25,3 +25,5 @@ class ImageCache:
     def __contains__(self, item):
         return item in self.data
 
+    def reset(self):
+        self.data = {}
