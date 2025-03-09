@@ -12,6 +12,7 @@ $ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
 """
 
 
+import io
 import json
 import time
 
@@ -20,9 +21,6 @@ import streamlit as st
 from config import default as config
 import utils
 
-
-DEBUG = True
-DEBUG = False
 
 st.set_page_config(page_title=config.TITLE, layout="wide")
 
@@ -46,16 +44,18 @@ if mode == 'show annotations':
     list_settings = utils.sidebar_display_annotation_list_controls()
 if mode == 'dev':
     dev = utils.sidebar_display_dev_controls()
-    clear_cache = st.sidebar.button('Clear image cache', on_click=utils.action_clear_image_cache)
-
-if DEBUG:
-    st.write(utils.session_options())
+    clear_cache = st.sidebar.button(
+        'Clear image cache', on_click=utils.action_clear_image_cache)
 
 
-def display_tier():
-    st.write('**Tier**')
-    return st.selectbox(
-        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
+def read_config_file(filename: str):
+    # do not use this till it does a decent job of parsing the config file
+    stream = io.StringIO()
+    with open(filename) as fh:
+        for line in fh:
+            if not line.strip().startswith('#'):
+                stream.write(line)
+        return stream.getvalue()
 
 
 # MAIN CONTENT
@@ -129,7 +129,10 @@ if mode == 'show annotations':
     if not list_settings['hide-controls']:
         with st.container(border=True):
             annotation_id = utils.display_remove_annotation_select()
-            st.button('Remove', on_click=utils.action_remove_annotation, args=[annotation_id])
+            st.button(
+                'Remove',
+                on_click=utils.action_remove_annotation,
+                args=[annotation_id])
         reloaded = st.button('Reload annotations', on_click=utils.load_annotations)
         if reloaded:
             st.info('Annotations were reloaded')
@@ -165,7 +168,10 @@ if mode == 'show object pool':
                 st.write(label)
                 c3, c4, _ = st.columns([4, 2, 6])
                 selected = c3.multiselect(label, inplay, label_visibility='collapsed')
-                c4.button(f"Remove {obj_type}", on_click=utils.action_remove_objects, args=[obj_type, selected])
+                c4.button(
+                    f"Remove {obj_type}",
+                    on_click=utils.action_remove_objects,
+                    args=[obj_type, selected])
                 utils.display_messages()
                 utils.display_available_objects(obj_type)
     else:
@@ -191,6 +197,15 @@ if mode == 'dev':
         with st.container(border=True):
             st.markdown('**Session State**')
             st.write(st.session_state)
+    elif dev == 'Show config settings':
+        with st.container(border=True):
+            st.markdown('#### Configurations settings - default')
+            with open('config/default.py') as fh:
+                st.code(fh.read(), language='python')
+        with st.container(border=True):
+            st.markdown('#### Configurations settings - task specific')
+            with open(st.session_state.io['config_path']) as fh:
+                st.code(fh.read(), language='python')
     elif dev == 'Show objects pool':
         with st.container(border=True):
             st.markdown('**Objects Pool**')

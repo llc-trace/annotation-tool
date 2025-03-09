@@ -122,7 +122,7 @@ def sidebar_display_annotation_controls():
     tune_start = st.sidebar.checkbox('Fine-tune start point', key='opt_tune_start')
     tune_end = st.sidebar.checkbox('Fine-tune end point', key='opt_tune_end')
     show_elan = st.sidebar.checkbox('Show ELAN', key='opt_show_elan')
-    show_json = st.sidebar.checkbox('Show JSON',  key='opt_show_json')
+    show_json = st.sidebar.checkbox('Show JSON', key='opt_show_json')
     return {
         'tune-start': tune_start,
         'tune-end': tune_end,
@@ -131,10 +131,10 @@ def sidebar_display_annotation_controls():
 
 def sidebar_display_annotation_list_controls():
     st.sidebar.header('Annotation list controls', divider=True)
-    video = st.sidebar.checkbox('Hide video',  key='opt_list_hide_video', value=True)
-    controls = st.sidebar.checkbox('Hide controls',  key='opt_list_hide_controls', value=True)
-    timeline = st.sidebar.checkbox('Hide timeline',  key='opt_list_hide_timeline')
-    table = st.sidebar.checkbox('Hide table',  key='opt_list_hide_table')
+    video = st.sidebar.checkbox('Hide video', key='opt_list_hide_video', value=True)
+    controls = st.sidebar.checkbox('Hide controls', key='opt_list_hide_controls', value=True)
+    timeline = st.sidebar.checkbox('Hide timeline', key='opt_list_hide_timeline')
+    table = st.sidebar.checkbox('Hide table', key='opt_list_hide_table')
     return {
         'hide-video': video,
         'hide-controls': controls,
@@ -143,9 +143,9 @@ def sidebar_display_annotation_list_controls():
 
 def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
-    options = ['Show session_state', 'Show objects pool', 'Show log',
-               'Show predicate specifications', 'Show property specifications',
-               'Show image cache']
+    options = ['Show session_state', 'Show config settings', 'Show log',
+               'Show objects pool', 'Show predicate specifications',
+               'Show property specifications', 'Show image cache']
     dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
     return dev_option
 
@@ -183,32 +183,28 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
 def display_left_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
     timepoint = timepoint_from_datetime(date)
-    step = 100
     ms = timeframe.start.in_milliseconds()
-    frames = get_frames(timeframe.video, ms, step)
+    frames = collect_frames(timeframe.video, get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button("Save starting time", on_click=action_save_starting_time, args=[timepoint])
+    st.button(
+        "Save starting time",
+        on_click=action_save_starting_time,
+        args=[timepoint])
 
 def display_right_boundary(timeframe: 'TimeFrame'):
     date = display_timepoint_tuner('Fine-tune the ending point', timeframe, timeframe.end)
     timepoint = timepoint_from_datetime(date)
-    step = 100
     ms = timeframe.end.in_milliseconds()
-    frames = get_frames(timeframe.video, ms, step)
+    frames = collect_frames(timeframe.video, get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button("Save ending time", on_click=action_save_ending_time, args=[timepoint])
+    st.button(
+        "Save ending time",
+        on_click=action_save_ending_time,
+        args=[timepoint])
 
-# TODO: this is not a great name for this method, invites confusion with
-# the collect_frames method
-def get_frames(video, ms: int, step: int):
-    window = get_window(ms, n=config.CONTEXT_SIZE, step=step)
-    return collect_frames(video, window)
-
-def get_window(milliseconds: int, n=4, step=100) -> list:
+def get_window(milliseconds: int, n=config.CONTEXT_SIZE, step=config.CONTEXT_STEP) -> list:
     """Returns a list of timepoints (in milliseconds) in a window around the given
     timepoint in milliseconds."""
-    # TODO: should this be on TimePoint?
-    # TODO: should this return a list of TimePoint instances?
     timepoints = []
     for ms in range(n * -step, 0, step):
         timepoints.append(milliseconds + ms)
@@ -216,6 +212,11 @@ def get_window(milliseconds: int, n=4, step=100) -> list:
     for ms in range(0, n * step, step):
         timepoints.append(milliseconds + ms + step)
     return timepoints
+
+def display_tier():
+    st.write('**Tier**')
+    return st.selectbox(
+        'select-tier', [None] + config.TIERS, label_visibility='collapsed')
 
 def display_sliding_window(column, frames, tp, header=None):
     """Display frames horizontally in a box."""
@@ -234,7 +235,6 @@ def display_frames(column, frames, cols=10, header=None):
     box = column.container(border=True)
     if header is not None:
         box.write(header)
-    #cols = box.columns(len(frames))
     cols = box.columns(cols)
     for i, frame in enumerate(frames):
         display_frame(cols[i], frame)
@@ -329,7 +329,7 @@ def display_annotations_timeline(annotations: list):
         item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
         if item:
             annotation_pp(item['annotation'])
-    except:
+    except Exception:
         pass
 
 def display_annotations_table(annotations: list):
@@ -502,9 +502,20 @@ def timepoint_from_time(t: datetime.time):
 def timestamp():
     return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')
 
-def log(text):
+def log(text: str):
     with open(st.session_state.io['log'], 'a') as fh:
-        fh.write(f'{timestamp()}\t{text}\n')
+        fh.write(f'INFO  {timestamp()}\t{text}\n')
+
+def debug(header: str, body: str = ''):
+    if st.session_state.debug:
+        ts = timestamp()
+        with open(st.session_state.io['log'], 'a') as fh:
+            fh.write(f'DEBUG {ts}\t{header}\n')
+            print(f'DEBUG {ts}\t{header}')
+            if body:
+                print(body)
+                for line in body.split('\n'):
+                    fh.write(f'DEBUG {line}\n')
 
 def create_label(text: str, size='normalsize'):
     """Return formatted text that can be used as a label of a particular size,
@@ -647,9 +658,9 @@ class TimePoint:
     normalize itself to cap seconds and minutes at 59 though."""
 
     def __init__(self, hours=0, minutes=0, seconds=0, milliseconds=0):
-        #if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
+        # if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
         #    raise ValueError('Values need to be >= 0')
-        #print('===', hours, minutes, seconds, milliseconds)
+        # print('===', hours, minutes, seconds, milliseconds)
         self.hours = hours
         self.minutes = minutes
         self.seconds = seconds
@@ -694,9 +705,9 @@ class TimePoint:
     def normalize(self):
         """Normalize values so that millisseconds < 1000, and seconds and minutes
         are < 60. Normalization leaves the hours alone"""
-        #print('>>>',self)
-        #print('---', type(self.seconds), type(self.milliseconds))
-        #print('---', self.seconds, self.milliseconds)
+        # print('>>>',self)
+        # print('---', type(self.seconds), type(self.milliseconds))
+        # print('---', self.seconds, self.milliseconds)
         if self.milliseconds > 999:
             seconds = int(self.milliseconds / 1000)
             self.seconds += seconds
@@ -836,6 +847,7 @@ class Frame:
         return f'<{self.__class__.__name__} t={timestamp} image={self.success}>'
 
     def get_frame(self, offset: int) -> np.ndarray:
+        debug(f'Extracting frame at {offset} from video')
         return self.vidcap.extract_frame(offset)
 
     def caption(self, short=True):
@@ -866,11 +878,13 @@ class FrameCollector:
         self.frames = []
 
     async def get_frames(self, timepoints: list, timing=False):
+        debug(f'FrameCollector.get_frames({str(timepoints)})')
         t0 = time.time()
         self.timepoints = timepoints
         calls = (self.get_frame(tp) for tp in timepoints)
-        log(f'Retrieving frames at {str(timepoints)}')
+        debug('    await asyncio.gather(*calls) STARTED')
         results = await asyncio.gather(*calls)
+        debug('    await asyncio.gather(*calls) ENDED')
         if timing:
             print(f"Got {len(timepoints)} frames in {time.time() - t0} seconds")
         return results
@@ -1038,7 +1052,7 @@ class Annotation:
             tp = TimePoint(milliseconds=self.start)
             offset = f'{tp.mm()}{tp.ss()}'
             return f'{prefix}{offset}'
-        except:
+        except Exception:
             return None
 
     def as_formula(self):
@@ -1097,15 +1111,11 @@ class Annotation:
             self.tier = selected_tier
         # Case 3: calculate the tier
         else:
-            #print('---', tf)
             taken = current_timeframes(self.task)
             for name, taken_tf in taken:
-                #print('   ', taken_tf, overlap(tf, taken_tf))
                 if overlap(tf, taken_tf):
-                    #print('... overlap found with', name, taken_tf)
                     self.tier = config.TIERS[1]
                     return
-            #print('... no overlap found')
             self.tier = config.TIERS[0]
 
     def copy(self):
