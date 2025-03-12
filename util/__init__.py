@@ -6,7 +6,7 @@ Basic Utilities for the annotator
 
 
 import sys
-import datetime
+from datetime import datetime, time
 
 import streamlit as st
 
@@ -42,14 +42,14 @@ def get_command_line_options() -> dict:
     debug = True if (len(sys.argv) > 3 and sys.argv[3] == 'debug') else False
     return {'video_path': video_path, 'config_path': config_path, 'debug': debug}
 
-def create_timeframe_from_slider_inputs(t1, t2):
+def create_timeframe_from_slider_inputs(t1: time, t2: time) -> TimeFrame:
     # after initial selection we do not have milliseconds yet
     return TimeFrame(TimePoint(hours=t1.hour, minutes=t1.minute, seconds=t1.second),
                      TimePoint(hours=t2.hour, minutes=t2.minute, seconds=t2.second),
                      video=st.session_state.video)
 
 def timestamp():
-    return datetime.datetime.now().strftime('%Y%m%d:%H%M%S')
+    return datetime.now().strftime('%Y%m%d:%H%M%S')
 
 def log(text: str):
     with open(st.session_state.io['log'], 'a') as fh:

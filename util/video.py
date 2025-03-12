@@ -89,9 +89,6 @@ class TimePoint:
     def normalize(self):
         """Normalize values so that millisseconds < 1000, and seconds and minutes
         are < 60. Normalization leaves the hours alone"""
-        # print('>>>',self)
-        # print('---', type(self.seconds), type(self.milliseconds))
-        # print('---', self.seconds, self.milliseconds)
         if self.milliseconds > 999:
             seconds = int(self.milliseconds / 1000)
             self.seconds += seconds
@@ -136,7 +133,11 @@ class TimeFrame:
 
     def __len__(self):
         if self.start is not None and self.end is not None:
-            return self.end.in_seconds() - self.start.in_seconds()
+            # We do not check whether the end of a timeframe is after the start,
+            # but len() may not return a negatove number so making sure we do
+            # not do that.
+            # TODO: should not even allow this to happen
+            return max(self.end.in_seconds() - self.start.in_seconds(), 0)
         else:
             return 0
 

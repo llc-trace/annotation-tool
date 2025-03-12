@@ -377,3 +377,5 @@ class Annotation:
         st.session_state.annotation = Annotation()
         for error in self.errors:
             util.log(error)
+
+'EOF'
