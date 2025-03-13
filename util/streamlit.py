@@ -182,6 +182,14 @@ def display_capture_boundaries():
     with col2:
         tp2 = display_seek_inputs('End', keys=keys2)
         st.write(tp2)
+    # Trap out of bounds errors
+    video_length = len(st.session_state.video)
+    if tp2.in_seconds() > video_length:
+        end = st.session_state.video.get_video_end()
+        tp2 = TimePoint.from_time(end)
+        st.warning(
+            'Warning: out-of-bounds error for the endpoint, '
+            f'using "{tp2.timestamp(short=True)}" instead')
     tf = TimeFrame(start=tp1, end=tp2, video=st.session_state.video)
     st.session_state.annotation.timeframe = tf
     return tf
@@ -249,7 +257,15 @@ def display_frames(column, frames, cols=10, header=None):
 
 def display_frame(column, frame, focus=False):
     caption = f'✔︎' if focus else frame.caption()
-    column.image(frame.image, channels="BGR", caption=caption)
+    if frame.success:
+        column.image(frame.image, channels="BGR", caption=caption)
+    # TODO: on failure may want to pass in an empty image with a caption like
+    # below, but before that need to figure out how to control the size of the
+    # image better (that is make it match the video screen dimensions).
+    # svg = (
+    #     '<svg width="100" height="75" xmlns="http://www.w3.org/2000/svg">'
+    #     '<rect width="100" height="75" /></svg>')
+    # column.image(svg, caption=caption)
 
 def display_tier():
     st.write('**Tier**')

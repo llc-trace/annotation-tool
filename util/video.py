@@ -80,7 +80,7 @@ class TimePoint:
     def mmm(self):
         return f'{self.milliseconds:03d}'
 
-    def timestamp(self, short=False):
+    def timestamp(self, short=False) -> str:
         if short:
             return f'{self.mm()}:{self.ss()}.{self.mmm()}'
         else:
@@ -185,10 +185,11 @@ class Video:
 
     def get_video_end(self) -> datetime.time:
         """Return the length of the video as a datetime.time object (which means that
-        videos cannotbe longer than 24 hours)."""
+        videos cannot be longer than 24 hours)."""
         fps = self.vidcap.get(cv2.CAP_PROP_FPS)
         frame_count = int(self.vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
         seconds = frame_count / fps
+        #st.write(seconds)
         minutes = int(seconds / 60)
         hours = int(minutes / 60)
         seconds = int(seconds % 60)
