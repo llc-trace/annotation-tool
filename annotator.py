@@ -21,6 +21,7 @@ import streamlit as st
 from config import default as config
 import util
 import util.streamlit as stutil
+from util.video import TimePoint, TimeFrame
 
 
 st.set_page_config(page_title=config.TITLE, layout="wide")
@@ -69,11 +70,16 @@ if mode == 'add annotations':
 
     # The box with timeframe settings
     with st.container(border=True):
-        t1, t2 = stutil.display_timeframe_slider()
-        tf = util.create_timeframe_from_slider_inputs(t1, t2)
-        if add_settings['tune-start']:
+        tf = stutil.display_capture_boundaries()
+        if False:
+            show_left = st.button("Show left boundary")
+            if show_left or add_settings['tune-start']:
+                stutil.display_left_boundary(tf)
+            show_right = st.button("Show right boundary")
+            if True or show_right or add_settings['tune-end']:
+                stutil.display_right_boundary(tf)
+        else:
             stutil.display_left_boundary(tf)
-        if add_settings['tune-end']:
             stutil.display_right_boundary(tf)
 
     # The box with the predicate and the argument structure
@@ -90,7 +96,7 @@ if mode == 'add annotations':
     if predicate:
         if config.TIER_IS_DEFINED_BY_USER:
             with st.container(border=True):
-                selected_tier = display_tier()
+                selected_tier = stutil.display_tier()
         with st.container(border=True):
             properties = config.PROPERTIES
             props = stutil.display_inputs(None, properties)

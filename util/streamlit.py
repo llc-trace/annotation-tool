@@ -104,14 +104,13 @@ def sidebar_display_video_controls():
     return offset, width
 
 def sidebar_display_seek_inputs():
-    st.sidebar.markdown("Seek offset in video (hours, minutes, seconds, milliseconds)")
-    col1, col2, col3, col4, _ = st.sidebar.columns([4, 4, 4, 6, 4])
+    st.sidebar.markdown("Seek offset in video (hours, minutes, seconds)")
+    col1, col2, col3, _ = st.sidebar.columns([4, 4, 5, 4])
     hours = col1.number_input('hh', min_value=0, label_visibility="collapsed")
     minutes = col2.number_input('mm', min_value=0, label_visibility="collapsed")
     seconds = col3.number_input('ss', min_value=0, label_visibility="collapsed")
-    mseconds = col4.number_input('mmm', min_value=0, label_visibility="collapsed")
     return TimePoint(
-        hours=hours, minutes=minutes, seconds=seconds, milliseconds=mseconds)
+        hours=hours, minutes=minutes, seconds=seconds)
 
 def sidebar_display_width_slider():
     return st.sidebar.slider(
@@ -152,11 +151,11 @@ def sidebar_display_dev_controls():
     dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
     return dev_option
 
-def display_video(video: 'Video', width, seconds):
+def display_video(video: 'Video', width, start: int = 0):
     st.info(video.filename)
     margin = max((100 - width), 0.01)
     container, _ = st.columns([width, margin])
-    container.video(video.path, start_time=seconds)
+    container.video(video.path, start_time=start)
 
 def display_timeframe_slider():
     """Displays a slider with two timepoints and returns a pair of instances of
@@ -172,27 +171,57 @@ def display_timeframe_slider():
                        format=config.SLIDER_TIME_FORMAT)
     return slider
 
+def display_capture_boundaries():
+    st.markdown('**Select start and end in hh:mm:ss:mmm**')
+    keys1 = ['start_hh', 'start_mm', 'start_ss', 'start_mmm']
+    keys2 = ['end_hh', 'end_mm', 'end_ss', 'end_mmm']
+    col1, col2 = st.columns(2)
+    with col1:
+        tp1 = display_seek_inputs('Start', keys=keys1)
+        st.write(tp1)
+    with col2:
+        tp2 = display_seek_inputs('End', keys=keys2)
+        st.write(tp2)
+    # Trap out of bounds errors
+    video_length = len(st.session_state.video)
+    if tp2.in_seconds() > video_length:
+        end = st.session_state.video.get_video_end()
+        tp2 = TimePoint.from_time(end)
+        st.warning(
+            'Warning: out-of-bounds error for the endpoint, '
+            f'using "{tp2.timestamp(short=True)}" instead')
+    tf = TimeFrame(start=tp1, end=tp2, video=st.session_state.video)
+    st.session_state.annotation.timeframe = tf
+    return tf
+
+def display_seek_inputs(header: str, keys: list):
+    # TODO: this is similar to sidebar_display_seek_inputs(), those two should
+    # be combined
+    def get_number(column, label: str, key: str):
+        return column.number_input(
+            label, key=key, min_value=0, label_visibility="collapsed")
+    col0, col1, col2, col3, col4, _ = st.columns([3, 4, 4, 4, 6, 6])
+    col0.markdown(header)
+    hours = get_number(col1, 'hh', keys[0])
+    minutes = get_number(col2, 'ss', keys[1])
+    seconds = get_number(col3, 'mm', keys[2])
+    mseconds = get_number(col4, 'mmm', keys[3])
+    return TimePoint(
+        hours=hours, minutes=minutes, seconds=seconds, milliseconds=mseconds)
+
 def display_left_boundary(timeframe: 'TimeFrame'):
-    date = display_timepoint_tuner('Fine-tune the starting point', timeframe, timeframe.start)
-    timepoint = TimePoint.from_date(date)
+    #st.write('**Showing left boundary**')
     ms = timeframe.start.in_milliseconds()
+    timepoint = TimePoint(milliseconds=ms)
     frames = collect_frames(timeframe.video, util.get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button(
-        "Save starting time",
-        on_click=action_save_starting_time,
-        args=[timepoint])
 
 def display_right_boundary(timeframe: 'TimeFrame'):
-    date = display_timepoint_tuner('Fine-tune the ending point', timeframe, timeframe.end)
-    timepoint = TimePoint.from_date(date)
+    #st.write('**Showing right boundary**')
     ms = timeframe.end.in_milliseconds()
+    timepoint = TimePoint(milliseconds=ms)
     frames = collect_frames(timeframe.video, util.get_window(ms))
     display_sliding_window(st, frames, timepoint)
-    st.button(
-        "Save ending time",
-        on_click=action_save_ending_time,
-        args=[timepoint])
 
 def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     step = datetime.timedelta(milliseconds=config.CONTEXT_STEP)
@@ -228,7 +257,15 @@ def display_frames(column, frames, cols=10, header=None):
 
 def display_frame(column, frame, focus=False):
     caption = f'✔︎' if focus else frame.caption()
-    column.image(frame.image, channels="BGR", caption=caption)
+    if frame.success:
+        column.image(frame.image, channels="BGR", caption=caption)
+    # TODO: on failure may want to pass in an empty image with a caption like
+    # below, but before that need to figure out how to control the size of the
+    # image better (that is make it match the video screen dimensions).
+    # svg = (
+    #     '<svg width="100" height="75" xmlns="http://www.w3.org/2000/svg">'
+    #     '<rect width="100" height="75" /></svg>')
+    # column.image(svg, caption=caption)
 
 def display_tier():
     st.write('**Tier**')
@@ -396,3 +433,4 @@ def remove_annotation(annotation_id: str):
     st.session_state.annotations = \
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
 
+'EOF'
