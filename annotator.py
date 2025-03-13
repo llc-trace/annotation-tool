@@ -82,6 +82,19 @@ if mode == 'add annotations':
             stutil.display_left_boundary(tf)
             stutil.display_right_boundary(tf)
 
+    # A button to loop the video for the currently selected timeframe
+    if len(st.session_state.annotation.timeframe) > 0:
+        start = max(0, st.session_state.annotation.timeframe.start.in_seconds() - 1)
+        end = st.session_state.annotation.timeframe.end.in_seconds() + 1
+        play = st.button(f"Loop video from {start} to {end}")
+        if play:
+            margin = max((100 - width), 0.01)
+            container, _ = st.columns([width, margin])
+            stop_play = container.button(f"Stop loop")
+            stutil.display_video(
+                video, width, start_time=start, end_time=end,
+                print_info=False, loop=True, autoplay=True)
+
     # The box with the predicate and the argument structure
     with st.container(border=True):
         predicate = stutil.display_predicate_selector(st)
@@ -141,9 +154,19 @@ if mode == 'show annotations':
                 on_click=stutil.action_remove_annotation,
                 args=[annotation_id])
         reloaded = st.button(
-            'Reload annotations', on_click=util.annotation.load_annotations)
+            'Reload annotations',
+            on_click=util.annotation.load_annotations)
         if reloaded:
             st.info('Annotations were reloaded')
+            if st.session_state.errors:
+                for error in st.session_state.errors:
+                    st.warning(error)
+                st.session_state.errors = []
+        exported = st.button(
+            'Export annotations in ELAN format',
+            on_click=util.annotation.export_annotations)
+        if exported:
+            st.info(f'Annotations were exported to {st.session_state.io["elan"]}')
     stutil.display_messages()
     stutil.display_annotations(list_settings)
 

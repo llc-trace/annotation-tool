@@ -134,7 +134,7 @@ def sidebar_display_annotation_controls():
 def sidebar_display_annotation_list_controls():
     st.sidebar.header('Annotation list controls', divider=True)
     video = st.sidebar.checkbox('Hide video', key='opt_list_hide_video', value=True)
-    controls = st.sidebar.checkbox('Hide controls', key='opt_list_hide_controls', value=True)
+    controls = st.sidebar.checkbox('Hide controls', key='opt_list_hide_controls', value=False)
     timeline = st.sidebar.checkbox('Hide timeline', key='opt_list_hide_timeline')
     table = st.sidebar.checkbox('Hide table', key='opt_list_hide_table')
     return {
@@ -151,11 +151,12 @@ def sidebar_display_dev_controls():
     dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
     return dev_option
 
-def display_video(video: 'Video', width, start: int = 0):
-    st.info(video.filename)
+def display_video(video: 'Video', width: int, print_info=True, **kwargs):
+    if print_info:
+        st.info(video.filename)
     margin = max((100 - width), 0.01)
     container, _ = st.columns([width, margin])
-    container.video(video.path, start_time=start)
+    container.video(video.path, **kwargs)
 
 def display_timeframe_slider():
     """Displays a slider with two timepoints and returns a pair of instances of

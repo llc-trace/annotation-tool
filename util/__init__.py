@@ -52,6 +52,7 @@ def timestamp():
     return datetime.now().strftime('%Y%m%d:%H%M%S')
 
 def log(text: str):
+    # TODO: refactor these log messages
     with open(st.session_state.io['log'], 'a') as fh:
         fh.write(f'INFO  {timestamp()}\t{text}\n')
 
@@ -65,6 +66,16 @@ def debug(header: str, body: str = ''):
                 print(body)
                 for line in body.split('\n'):
                     fh.write(f'DEBUG {line}\n')
+
+def error(header: str, body: str = ''):
+    ts = timestamp()
+    with open(st.session_state.io['log'], 'a') as fh:
+        fh.write(f'ERROR {ts}\t{header}\n')
+        print(f'ERROR {ts}\t{header}')
+        if body:
+            print(body)
+            for line in body.split('\n'):
+                fh.write(f'ERROR {line}\n')
 
 def create_label(text: str, size='normalsize'):
     """Return formatted text that can be used as a label of a particular size,

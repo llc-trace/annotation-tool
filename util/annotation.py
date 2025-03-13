@@ -21,22 +21,32 @@ def load_annotations():
         annotations = []
         removed_annotations = []
         for raw_annotation in raw_annotations:
-            if 'add-object' in raw_annotation:
-                obj_type, obj = raw_annotation['add-object'][:2]
-                st.session_state.pool.put_object_in_play(obj_type, obj)
-            elif 'remove-object' in raw_annotation:
-                obj_type, obj = raw_annotation['remove-object'][:2]
-                st.session_state.pool.remove_object_from_play(obj_type, obj)
-            elif 'remove-annotation' in raw_annotation:
-                removed_annotations.append(raw_annotation['remove-annotation'])
-            else:
-                annotation = Annotation().import_fields(raw_annotation)
-                annotations.append(annotation)
+            try:
+                if 'add-object' in raw_annotation:
+                    obj_type, obj = raw_annotation['add-object'][:2]
+                    st.session_state.pool.put_object_in_play(obj_type, obj)
+                elif 'remove-object' in raw_annotation:
+                    obj_type, obj = raw_annotation['remove-object'][:2]
+                    st.session_state.pool.remove_object_from_play(obj_type, obj)
+                elif 'remove-annotation' in raw_annotation:
+                    removed_annotations.append(raw_annotation['remove-annotation'])
+                else:
+                    annotation = Annotation().import_fields(raw_annotation)
+                    annotations.append(annotation)
+            except Exception:
+                st.session_state.errors.append(f'Error loading {raw_annotation}')
+                util.error(f'Error loading {raw_annotation}')
         annotations = [a for a in annotations if a.identifier not in removed_annotations]
         st.session_state.annotations = annotations
         util.log(f'Loaded annotations from {filename}')
 
 
+def export_annotations():
+    elan_file = st.session_state.io['elan']
+    with open(elan_file, 'w') as fh:
+        for annotation in st.session_state.annotations:
+            fh.write(annotation.as_elan() + '\n')
+            
 def annotation_identifiers() -> list:
     return [annotation.identifier for annotation in st.session_state.annotations]
 
@@ -365,11 +375,8 @@ class Annotation:
             self.assign_identifier()
             st.session_state.annotations.append(self.copy())
             json_file = st.session_state.io['json']
-            elan_file = st.session_state.io['elan']
             with open(json_file, 'a') as fh:
                 fh.write(json.dumps(self.as_json()) + '\n')
-            with open(elan_file, 'a') as fh:
-                fh.write(self.as_elan() + '\n')
             st.session_state.action_type = None
             util.log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
