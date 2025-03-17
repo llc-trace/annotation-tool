@@ -71,16 +71,19 @@ if mode == 'add annotations':
     # The box with timeframe settings
     with st.container(border=True):
         tf = stutil.display_capture_boundaries()
-        if False:
-            show_left = st.button("Show left boundary")
-            if show_left or add_settings['tune-start']:
-                stutil.display_left_boundary(tf)
-            show_right = st.button("Show right boundary")
-            if True or show_right or add_settings['tune-end']:
-                stutil.display_right_boundary(tf)
-        else:
+        if not add_settings['hide_boundaries']:
             stutil.display_left_boundary(tf)
             stutil.display_right_boundary(tf)
+        # if False:
+        #    show_left = st.button("Show left boundary")
+        #    if show_left or add_settings['tune-start']:
+        #        stutil.display_left_boundary(tf)
+        #    show_right = st.button("Show right boundary")
+        #    if True or show_right or add_settings['tune-end']:
+        #        stutil.display_right_boundary(tf)
+        # else:
+        #    stutil.display_left_boundary(tf)
+        #    stutil.display_right_boundary(tf)
 
     # A button to loop the video for the currently selected timeframe
     if len(st.session_state.annotation.timeframe) > 0:

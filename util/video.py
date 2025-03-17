@@ -184,17 +184,14 @@ class Video:
         return self._length
 
     def get_video_end(self) -> datetime.time:
-        """Return the length of the video as a datetime.time object (which means that
-        videos cannot be longer than 24 hours)."""
+        """Return the last reliable location in the video as a datetime.time object
+        (which means that videos cannot be longer than 24 hours)."""
         fps = self.vidcap.get(cv2.CAP_PROP_FPS)
         frame_count = int(self.vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
         seconds = frame_count / fps
-        #st.write(seconds)
-        minutes = int(seconds / 60)
-        hours = int(minutes / 60)
-        seconds = int(seconds % 60)
-        minutes = int(minutes % 60)
-        return datetime.time(hour=hours, minute=minutes, second=seconds-1)
+        last_reliable_second = int(seconds) - 1
+        tp = TimePoint(seconds=last_reliable_second)
+        return datetime.time(hour=tp.hours, minute=tp.minutes, second=tp.seconds)
 
     def extract_frame(self, offset: int):
         """Extract a frame from the video at a particular offset in milliseconds,

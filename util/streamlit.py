@@ -121,13 +121,11 @@ def sidebar_display_width_slider():
 
 def sidebar_display_annotation_controls():
     st.sidebar.header('Annotation controls', divider=True)
-    tune_start = st.sidebar.checkbox('Fine-tune start point', key='opt_tune_start')
-    tune_end = st.sidebar.checkbox('Fine-tune end point', key='opt_tune_end')
+    hide_boundaries = st.sidebar.checkbox('Hide boundary frames', key='opt_hide_boundaries')
     show_elan = st.sidebar.checkbox('Show ELAN', key='opt_show_elan')
     show_json = st.sidebar.checkbox('Show JSON', key='opt_show_json')
     return {
-        'tune-start': tune_start,
-        'tune-end': tune_end,
+        'hide_boundaries': hide_boundaries,
         'elan': show_elan,
         'json': show_json }
 
@@ -201,7 +199,7 @@ def display_seek_inputs(header: str, keys: list):
     def get_number(column, label: str, key: str):
         return column.number_input(
             label, key=key, min_value=0, label_visibility="collapsed")
-    col0, col1, col2, col3, col4, _ = st.columns([3, 4, 4, 4, 6, 6])
+    col0, col1, col2, col3, col4, _ = st.columns([3, 4, 4, 4, 4, 6])
     col0.markdown(header)
     hours = get_number(col1, 'hh', keys[0])
     minutes = get_number(col2, 'ss', keys[1])
