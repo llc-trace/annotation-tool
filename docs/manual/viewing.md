@@ -21,4 +21,4 @@ Clicking an item in the timeline generates a small representation of the selecte
 
 Entering a search term restricts the displayed annotations to just the ones that match the search term. The match is on normalized strings in the identifier, predicate, arguments and properties.
 
-When clicking the "Hide controls" checkbox you will get access to functionality to delete annotations and reload annotations.
+When clicking the "Hide controls" checkbox you will get access to functionality to delete annotations, reload annotations and export annotations in ELAN format.

@@ -1,6 +1,6 @@
 """
 
-Settings for General Gesture Annotation. 
+Settings for General Gesture Annotation.
 
 Overwrites settings in config.py.
 
@@ -32,7 +32,8 @@ PREDICATES = {
 
 PROPERTIES = [
 
-    {'type': 'comment', 'label': '**Comment (optional)**', 'items': ['TEXT'], 'optional': True}
+    {'type': 'comment', 'label': '**Comment (optional)**',
+     'items': ['TEXT'], 'optional': True}
 ]
 
 DEFAULT_TIER = 'Gestures'

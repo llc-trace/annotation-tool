@@ -10,44 +10,28 @@
 
 ## Adding Annotations
 
-When you first start the tool you will get your home screen which will look something like below. In this case the tool was started with the configuration file in `config/actions.py`.
+When you first start the tool you will get your home screen the top of which which will look something like below. In this case the tool was started with the configuration file in `config/actions.py`.
 
-<img src="images/add-annotation.png"/>
+<img src="images/add-annotation0.png"/>
 
-The default tool mode is to add annotations. The side bar on the left shows the total number of annotations (zero at the moment) and some controls: (1) tool mode selection, (2) video seek, (3) video size, and (4) control specific to the selected mode. Some inputs in the sidebar may not be present in all tool modes.
+The default tool mode is to add annotations. The side bar on the left shows the total number of annotations and some controls: (1) tool mode selection, (2) video seek, (3) video size, and (4) controls specific to the selected mode. Some inputs in the sidebar may not be present in all tool modes.
 
-Much of this should be self-explanatory, except perhaps for the video seek. When entering hours, minutes, seconds and milliseconds and then hitting return you will move the cursor on the video to the desired time point. You may enter any value, for example, you could enter 200 seconds and the video cursor will move to the 200 second mark. A normalized value will always be display, for the 200 second mark it will be `<TimePoint 00:03:20.000>`.
+Much of this should be self-explanatory, except perhaps for the video seek. When entering hours, minutes, seconds and milliseconds and then hitting return you will move the cursor on the video to the desired time point. You may enter any value larger than zero, for example, you could enter 200 seconds and the video cursor will move to the 200 second mark. A normalized value will always be displayed, for the 200 second mark it would be `<TimePoint 00:03:20.000>`.
 
 In the main page you see the name of the video, the video itself, a slider to select the timeframe, an option to select a predicate (defined by the configuration) and a rendering of the current state of the annotation, which is pretty much empty, except potentially for some defaults that originate from the configuration. Notice also the warning below the annotation that says *Cannot add annotation yet because not all required fields have been specified and/or not all values are legal*. You can click the "Show issues" button and the tool will tell you that numerous fields are missing, including start and end points. Once you have filled in all needed values the warning will disappear and the "Show issues" button will be replaced by a "Save Annotation" button.
 
-To add an annotation, you first watch the video to find something to annotate, possibly helped by the video seek. Then annotation is a four step process.
+To add an annotation, you first watch part of the video to find something to annotate, possibly helped by the video seek. Then annotation is a four step process.
 
 
 ### Timeframe selection
 
-Use the slider to select start and end times. Let's say we feel that there is an action starting at `<TimePoint 00:02:42.000>`, namely the guy is picking up a tomato:
+To select the start and end of the timeframe to annotate, fill in the values below the video. For the screenshot above we had already selected 11 seconds and 15 seconds as the start and end points. The two rows of images show the one-second window around start and end point. Use the time values below the images to fine-tune the milliseconds. In this case you may want to use 11:400 for the start and 14:600 for the end.
 
-<img src="images/add-annotation1.png"/>
+If for your task a granularity of seconds is enough, then you can select "Hide boundary frames" and you will not even see those frames and you will not be bothered by fine-tuning.
 
-Once you have selected this, the rendering of the current annotation will be updated (note the appearance of the name field, this is calculated automatically from the start and end times and it is used later when displaying annotations in a timeline):
+In case you select an end time that falls beyond the end of the video then the tool will give you a warning and select the last second of the video for the end. You can still fine-tune though.
 
-<img src="images/add-annotation2.png"/>
-
-If our timeframe selection operates at a granularity of seconds, we are done, but if we need the precision one order of magnitude larger (that is, tenths of seconds) we need to adjust the start and end times further. FOr example, for fine-tuning the start time we check "Fine-tune start point" in the sidebar, which will then give you the following.
-
-<img src="images/add-annotation3.png"/>
-
-Here you can select a frame within a one second window around the selected start point. The thumbnails will help you with that, they are somewhat small on a small screen, but you can do a mouse over and then click the little box that pops up to see a larger picture. You can then click the second timeline to pick a more precise start point.
-
-If the one-second range misses the start of the annotation you can adjust the top slider (the one to select seconds).
-
-> ⚠️ Sometimes when you are fine-tuning and you adjust the first timeframe slider a little bit to vigorously the tool may crash and you will have to restrart.
-
-Let's say you decided that the tomato was picked at 02:41:800 and you selected that. Once satisfied you can click the "Save starting time" button and the start time will be updated. At that point the fine-tuning slider will disappear and the start value will be updated:
-
-<img src="images/add-annotation4.png"/>
-
-You can repeat the process for the end point.
+Finally, clicking the "Loop video" button will present a new video widget which will loop through the timeframe, tacking on a second at the start and the end.
 
 
 ### Selecting the predicate, its arguments and any properties
