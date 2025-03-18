@@ -65,8 +65,8 @@ def read_config_file(filename: str):
 if mode == 'add annotations':
 
     st.title('Add annotations')
-
-    stutil.display_video(video, width, offset.in_seconds())
+    st.info(video.filename)
+    stutil.display_video(video, width, start_time=offset.in_seconds())
 
     # The box with timeframe settings
     with st.container(border=True):
@@ -74,16 +74,6 @@ if mode == 'add annotations':
         if not add_settings['hide_boundaries']:
             stutil.display_left_boundary(tf)
             stutil.display_right_boundary(tf)
-        # if False:
-        #    show_left = st.button("Show left boundary")
-        #    if show_left or add_settings['tune-start']:
-        #        stutil.display_left_boundary(tf)
-        #    show_right = st.button("Show right boundary")
-        #    if True or show_right or add_settings['tune-end']:
-        #        stutil.display_right_boundary(tf)
-        # else:
-        #    stutil.display_left_boundary(tf)
-        #    stutil.display_right_boundary(tf)
 
     # A button to loop the video for the currently selected timeframe
     if len(st.session_state.annotation.timeframe) > 0:
@@ -96,7 +86,7 @@ if mode == 'add annotations':
             stop_play = container.button(f"Stop loop")
             stutil.display_video(
                 video, width, start_time=start, end_time=end,
-                print_info=False, loop=True, autoplay=True)
+                loop=True, autoplay=True)
 
     # The box with the predicate and the argument structure
     with st.container(border=True):
@@ -146,8 +136,9 @@ if mode == 'add annotations':
 if mode == 'show annotations':
 
     st.title('Annotations')
+    st.info(video.filename)
     if not list_settings['hide-video']:
-        stutil.display_video(video, width, offset.in_seconds())
+        stutil.display_video(video, width, start_time=offset.in_seconds())
     fname = st.session_state.io['json']
     if not list_settings['hide-controls']:
         with st.container(border=True):

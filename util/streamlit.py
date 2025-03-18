@@ -149,9 +149,7 @@ def sidebar_display_dev_controls():
     dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
     return dev_option
 
-def display_video(video: 'Video', width: int, print_info=True, **kwargs):
-    if print_info:
-        st.info(video.filename)
+def display_video(video: 'Video', width: int, **kwargs):
     margin = max((100 - width), 0.01)
     container, _ = st.columns([width, margin])
     container.video(video.path, **kwargs)
