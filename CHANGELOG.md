@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 This project uses a simple versioning scheme with major and minor versions. Major versions are for significant updates with more than minimal functionality changes. Minor versions are for small functionality changes, documentation updates, small fixes and patches, and under-the-hood changes.
 
 
+## Version X.X
+
+- Revamped list of annoations
+- Added timeline slider to select window in video
+- Changed display of annotation list controls
+
+
 ## Version 3.0 — 2025-03-17
 
 - Replaced timeline slider with number inputs, which sped up the tool, made it more precise on large videos.
@@ -13,6 +20,7 @@ This project uses a simple versioning scheme with major and minor versions. Majo
 - Tidied up creation of ELAN output, is now done by clicking a button in the annotations view.
 - Some general smoothing of the interface.
 
+
 ## Version 2.0 — 2025-02-26
 
 - Added annotation tasks as the basic organizational layer.
@@ -20,6 +28,7 @@ This project uses a simple versioning scheme with major and minor versions. Majo
 - Generalized blocks pool to an object pool. 
 - Updated timeline display, adding a set of thumbnails for the first 5 seconds of a selected annotation.
 - Streamlined the image cache.
+
 
 ## Version 1.0 — 2025-02-17
 

@@ -36,7 +36,7 @@ class TimePoint:
     @classmethod
     def from_updated_timepoint(cls, timepoint: 'TimePoint', milliseconds: int):
         """Takes a TimePoint and returns a new one which is the same except that the
-        specified amount of millicesonds is added."""
+        specified amount of milliseconds is added."""
         # TODO: not currently used and probably deprecated
         total = timepoint.in_milliseconds() + int(milliseconds)
         return cls(milliseconds=total)

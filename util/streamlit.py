@@ -11,6 +11,7 @@ import sys
 import json
 import datetime
 import pathlib
+import collections
 
 import pandas as pd
 import streamlit as st
@@ -132,12 +133,10 @@ def sidebar_display_annotation_controls():
 def sidebar_display_annotation_list_controls():
     st.sidebar.header('Annotation list controls', divider=True)
     video = st.sidebar.checkbox('Hide video', key='opt_list_hide_video', value=True)
-    controls = st.sidebar.checkbox('Hide controls', key='opt_list_hide_controls', value=False)
     timeline = st.sidebar.checkbox('Hide timeline', key='opt_list_hide_timeline')
     table = st.sidebar.checkbox('Hide table', key='opt_list_hide_table')
     return {
         'hide-video': video,
-        'hide-controls': controls,
         'hide-timeline': timeline,
         'hide-table': table }
 
@@ -165,7 +164,8 @@ def display_timeframe_slider():
                        max_value=video.end,
                        step=datetime.timedelta(seconds=1),
                        on_change=action_change_timeframe,
-                       format=config.SLIDER_TIME_FORMAT)
+                       format=config.SLIDER_TIME_FORMAT,
+                       label_visibility='collapsed')
     return slider
 
 def display_capture_boundaries():
@@ -311,10 +311,13 @@ def display_annotation(annotation, show_options: dict):
             st.json(annotation.as_json())
 
 def display_annotations(settings: dict):
+    annotations = util.get_annotations()
     with st.container(border=True):
+        st.text('Select a range to display')
+        t1, t2 = display_timeframe_slider()
+        annotations = util.get_annotations_in_range(annotations, t1, t2)
         term = st.text_input('Search annotations')
-        filtered_annotations = \
-            [a for a in reversed(st.session_state.annotations) if a.matches(term)]
+        filtered_annotations = [a for a in annotations if a.matches(term)]
         if not settings['hide-timeline']:
             display_annotations_timeline(filtered_annotations)
         if not settings['hide-table']:
@@ -326,6 +329,7 @@ def display_annotations_timeline(annotations: list):
             return None
         annotation = Annotation().import_fields(anno)
         st.write(annotation)
+        st.json(annotation.as_json())
         offsets = list(range(annotation.start, annotation.end, 500))
         frames = collect_frames(st.session_state.video, offsets[:10])
         display_frames(st, frames, cols=10)
@@ -341,12 +345,34 @@ def display_annotations_timeline(annotations: list):
         item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
         if item:
             annotation_pp(item['annotation'])
+            start = int(item['annotation']['start'] / 1000) - 1
+            end = int(item['annotation']['end'] / 1000) + 1
+            play = st.button(f"Play annotation")
+            if play:
+                st.button(f"Stop playing")
+                display_video(
+                    st.session_state.video, 50, start_time=start, end_time=end,
+                    loop=True, autoplay=True)
     except Exception:
-        pass
+        st.warning('Could not display the timeline')
+
+def get_chunks(items: list, n: int):
+    return [items[i:i + n] for i in range(0, len(items), n)]
 
 def display_annotations_table(annotations: list):
-    rows = [a.as_row() for a in annotations]
-    st.table(pd.DataFrame(rows, columns=Annotation.columns()))
+    def as_row(annotation):
+        # does not include task, tier and properties fields
+        return annotation.as_row()[2:-1]
+    structured_annotations = collections.defaultdict(dict)
+    for a in annotations:
+        structured_annotations[a.task].setdefault(a.tier, []).append(a)
+    columns = Annotation.columns()[2:-1]
+    for task in sorted(structured_annotations):
+        for tier in sorted(structured_annotations[task]):
+            # st.markdown(f'##### {task} &longrightarrow; {tier}')
+            st.code(f'task: "{task}"\ntier: "{tier}"', language='yaml')
+            rows = [as_row(a) for a in structured_annotations[task][tier]]
+            st.table(pd.DataFrame(rows, columns=columns))
 
 def display_errors():
     for error in st.session_state.errors:

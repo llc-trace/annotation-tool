@@ -32,8 +32,7 @@ video = st.session_state.video
 
 # SIDEBAR
 
-# The sidebar prints some info, controls the annotation mode and shows video
-# controls and other controls
+# The sidebar prints some info and has a variety of controls
 
 st.sidebar.title(config.TITLE)
 stutil.sidebar_display_info()
@@ -65,7 +64,7 @@ def read_config_file(filename: str):
 if mode == 'add annotations':
 
     st.title('Add annotations')
-    st.info(video.filename)
+    st.info(f'**{video.filename}**')
     stutil.display_video(video, width, start_time=offset.in_seconds())
 
     # The box with timeframe settings
@@ -81,9 +80,7 @@ if mode == 'add annotations':
         end = st.session_state.annotation.timeframe.end.in_seconds() + 1
         play = st.button(f"Loop video from {start} to {end}")
         if play:
-            margin = max((100 - width), 0.01)
-            container, _ = st.columns([width, margin])
-            stop_play = container.button(f"Stop loop")
+            st.button(f"Stop loop")
             stutil.display_video(
                 video, width, start_time=start, end_time=end,
                 loop=True, autoplay=True)
@@ -136,31 +133,37 @@ if mode == 'add annotations':
 if mode == 'show annotations':
 
     st.title('Annotations')
-    st.info(video.filename)
+    st.info(f'**{video.filename}**')
     if not list_settings['hide-video']:
         stutil.display_video(video, width, start_time=offset.in_seconds())
     fname = st.session_state.io['json']
-    if not list_settings['hide-controls']:
-        with st.container(border=True):
+
+    action = st.pills(
+        'annotation controls',
+        options=[
+            'Reload annotations',
+            'Remove annotation',
+            'Export annotations in ELAN format'],
+        label_visibility='collapsed')
+
+    if action is not None:
+        if action.startswith('Remove'):
             annotation_id = stutil.display_remove_annotation_select()
             st.button(
                 'Remove',
                 on_click=stutil.action_remove_annotation,
                 args=[annotation_id])
-        reloaded = st.button(
-            'Reload annotations',
-            on_click=util.annotation.load_annotations)
-        if reloaded:
+        elif action.startswith('Reload'):
+            util.annotation.load_annotations()
             st.info('Annotations were reloaded')
             if st.session_state.errors:
                 for error in st.session_state.errors:
                     st.warning(error)
                 st.session_state.errors = []
-        exported = st.button(
-            'Export annotations in ELAN format',
-            on_click=util.annotation.export_annotations)
-        if exported:
+        elif action.startswith('Export'):
+            util.annotation.export_annotations()
             st.info(f'Annotations were exported to {st.session_state.io["elan"]}')
+
     stutil.display_messages()
     stutil.display_annotations(list_settings)
 

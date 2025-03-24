@@ -14,10 +14,21 @@ from config import default as config
 from util.video import TimePoint, TimeFrame
 
 
+def get_annotations():
+    # TODO: why do I reverse them, they don't seem to be sorted anyway
+    return list(reversed(st.session_state.annotations))
+
+def get_annotations_in_range(annotations: list, t1, t2) -> list:
+    tp1 = TimePoint.from_time(t1).in_milliseconds()
+    tp2 = TimePoint.from_time(t2).in_milliseconds()
+    return [a for a in annotations if (a.start >= tp1) and (a.start < tp2)]
+
 def get_timeline(annotations: list) -> list:
+    """Returns a list of dictionaries that can serve as input to streamlit_timeline,
+    that is, they have id, group and start properties."""
     basetime = '1999-01-01T00'
     items = []
-    for n, annotation in enumerate(annotations):
+    for n, annotation in enumerate(sorted(annotations)):
         items.append({
             "id": annotation.identifier, "content": annotation.name,
             "group": annotation.tier,

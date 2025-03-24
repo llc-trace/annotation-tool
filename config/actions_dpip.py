@@ -14,7 +14,7 @@ MULTIPLE_TIERS = True
 
 OBJECT_POOL = { 'blocks': [] }
 for size in ('Large', 'Small'):
-    for color in ('Green', 'Red', 'Blue', 'Yellow'):
+    for color in ('Green', 'Red', 'Blue', 'Yellow', 'Orange'):
         for identifier in range(1, 7):
             OBJECT_POOL['blocks'].append(f'{size}{color}Block{identifier}')
 OBJECT_POOL['people'] = ['sally', 'sue', 'jack']
