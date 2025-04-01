@@ -318,9 +318,10 @@ def display_annotations(settings: dict):
         annotations = util.get_annotations_in_range(annotations, t1, t2)
         term = st.text_input('Search annotations')
         filtered_annotations = [a for a in annotations if a.matches(term)]
-        if not settings['hide-timeline']:
-            display_annotations_timeline(filtered_annotations)
-        if not settings['hide-table']:
+    if not settings['hide-timeline']:
+        display_annotations_timeline(filtered_annotations)
+    if not settings['hide-table']:
+        with st.container(border=True):
             display_annotations_table(sorted(filtered_annotations))
 
 def display_annotations_timeline(annotations: list):
@@ -328,8 +329,7 @@ def display_annotations_timeline(annotations: list):
         if anno is None:
             return None
         annotation = Annotation().import_fields(anno)
-        st.write(annotation)
-        st.json(annotation.as_json())
+        st.code(annotation.as_yaml(), language='yaml')
         offsets = list(range(annotation.start, annotation.end, 500))
         frames = collect_frames(st.session_state.video, offsets[:10])
         display_frames(st, frames, cols=10)
@@ -342,19 +342,24 @@ def display_annotations_timeline(annotations: list):
     options = { "selectable": True, "zoomable": True, "stack": False, "height": height }
     timeline_items = util.get_timeline(annotations)
     try:
-        item = streamlit_timeline.st_timeline(timeline_items, groups=groups, options=options)
-        if item:
-            annotation_pp(item['annotation'])
-            start = int(item['annotation']['start'] / 1000) - 1
-            end = int(item['annotation']['end'] / 1000) + 1
+        selected_item = streamlit_timeline.st_timeline(
+            timeline_items, groups=groups, options=options)
+    except Exception as e:
+        st.warning('Could not display the timeline')
+        util.error('Could not display the timeline', body=str(e))
+        selected_item = None
+    if selected_item:
+        with st.container(border=True):
+            st.text('Selected annotation')
+            annotation_pp(selected_item['annotation'])
+            start = int(selected_item['annotation']['start'] / 1000) - 1
+            end = int(selected_item['annotation']['end'] / 1000) + 1
             play = st.button(f"Play annotation")
             if play:
                 st.button(f"Stop playing")
                 display_video(
                     st.session_state.video, 50, start_time=start, end_time=end,
                     loop=True, autoplay=True)
-    except Exception:
-        st.warning('Could not display the timeline')
 
 def get_chunks(items: list, n: int):
     return [items[i:i + n] for i in range(0, len(items), n)]

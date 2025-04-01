@@ -136,4 +136,44 @@ def input_signature(input_description: dict):
     optionality_marker = '?' if input_description.get('optional') else ''
     return f'{input_description["type"]}{optionality_marker}'
 
+
+class PredicateDescription:
+
+    """Description of a predicate as defined in the config.PREDICATES."""
+
+    def __init__(self, predicate):
+        self.predicate = predicate
+        self.fields = []
+        for argument in config.PREDICATES.get(predicate, []):
+            argcopy = {}
+            for field in argument:
+                if field == 'type':
+                    argcopy['field_type'] = argument['type']
+                else:
+                    argcopy[field] = argument[field]
+            field_description = FieldDescription(**argcopy)
+            self.fields.append(field_description)
+
+    def pp(self):
+        print(self.predicate)
+        for field in self.fields:
+            print(f'    {field}')
+
+
+class FieldDescription:
+
+    def __init__(self, field_type: str, items: list, label=None, optional=False):
+        self.type = field_type
+        self.items = items
+        self.label = f'**{self.type}**' if label is None else label
+        self.optional = optional
+
+    def __str__(self):
+        return f'<FieldDescription {self.signature()} items={len(self.items)}>'
+
+    def signature(self):
+        optionality_marker = '?' if self.optional else ''
+        return f'{self.type}{optionality_marker}'
+
+
 'EOF'

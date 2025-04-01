@@ -313,6 +313,25 @@ class Annotation:
             'arguments': self.arguments,
             'properties': self.properties }
 
+    def as_yaml(self):
+        # First filter out properties without values
+        properties = [(prop, val) for prop, val in self.properties.items() if val]
+        if properties:
+            properties_str = 'properties:\n'
+            for prop, val in properties:
+                properties_str += f'    {prop}: {val}\n'
+        else:
+            properties_str = ''
+        return (
+            f'task: {self.task}\n'
+            f'tier: {self.tier}\n'
+            f'identifier: {self.identifier}\n'
+            f'name: {self.name}\n'
+            f'interval: ({self.start}, {self.end})\n'
+            f'predicate: {self.as_formula()}\n'
+            + properties_str
+            )
+
     def as_elan(self):
         start = f'{self.start/1000:.3f}' if self.start else 'None'
         end = f'{self.end/1000:.3f}' if self.end else 'None'

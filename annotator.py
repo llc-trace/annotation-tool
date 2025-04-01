@@ -88,6 +88,8 @@ if mode == 'add annotations':
     # The box with the predicate and the argument structure
     with st.container(border=True):
         predicate = stutil.display_predicate_selector(st)
+        #predicate_description = util.PredicateDescription(predicate)
+        #predicate_description.pp()
         arguments = config.PREDICATES.get(predicate, [])
         args = stutil.display_inputs(predicate, arguments)
         args = util.process_arguments(args)
