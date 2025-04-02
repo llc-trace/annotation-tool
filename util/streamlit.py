@@ -328,7 +328,7 @@ def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
         if anno is None:
             return None
-        annotation = Annotation().import_fields(anno)
+        annotation = Annotation.from_dictionary(anno)
         st.code(annotation.as_yaml(), language='yaml')
         offsets = list(range(annotation.start, annotation.end, 500))
         frames = collect_frames(st.session_state.video, offsets[:10])
@@ -460,5 +460,3 @@ def action_save_ending_time(timepoint: 'TimePoint'):
 def remove_annotation(annotation_id: str):
     st.session_state.annotations = \
         [a for a in st.session_state.annotations if a.identifier != annotation_id]
-
-'EOF'

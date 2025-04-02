@@ -12,10 +12,6 @@ $ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
 """
 
 
-import io
-import json
-import time
-
 import streamlit as st
 
 from config import default as config
@@ -47,16 +43,6 @@ if mode == 'dev':
     dev = stutil.sidebar_display_dev_controls()
     clear_cache = st.sidebar.button(
         'Clear image cache', on_click=stutil.action_clear_image_cache)
-
-
-def read_config_file(filename: str):
-    # do not use this till it does a decent job of parsing the config file
-    stream = io.StringIO()
-    with open(filename) as fh:
-        for line in fh:
-            if not line.strip().startswith('#'):
-                stream.write(line)
-        return stream.getvalue()
 
 
 # MAIN CONTENT
@@ -256,4 +242,7 @@ if mode == 'dev':
     elif dev == 'Show image cache':
         with st.container(border=True):
             st.markdown('**Image cash**')
-            st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))
+            timepoints = [str(tp) for tp in sorted(st.session_state.cache.data)]
+            tp = st.pills('imagecash-timepoint', timepoints, label_visibility='collapsed')
+            if tp is not None:
+                st.image(st.session_state.cache[int(tp)], channels='BGR')
