@@ -1,4 +1,4 @@
-# Expanding on the Predicates
+# Introducing more general predicates
 
 In [issue 33](https://github.com/llc-trace/annotation-tool/issues/33) there is a push for allowing things like
 
@@ -110,7 +110,7 @@ You could have negation in there:
 }
 ```
 
-And this also allows arbitrary depth.
+We will probably allow arbitrary depth.
 
 So basically we have:
 
@@ -124,9 +124,9 @@ ArgValue ==> DoubleQuotedString
 ```
 
 
-## Implementation plan
+## Implementation
 
-For the current purpose, we can start with a partial implementation which allows for just the predicate-arguments object and then add a simple conjunction.
+For the current purpose, we can start with a partial implementation which allows for just the predicate-arguments object and then add conjunctions, leaving the disjunctions and negations for later.
 
 
 ### The new Predicate class

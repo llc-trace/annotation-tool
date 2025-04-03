@@ -33,6 +33,10 @@ def intialize_session_state():
     and the log, the current video, the object pool, the list of annotations, the
     current annotation, the image cash, the current errors and the current messages.
     """
+    if 'errors' not in st.session_state:
+        st.session_state.errors = []
+    if 'messages' not in st.session_state:
+        st.session_state.messages = []
     options = util.get_command_line_options()
     video_path = options['video_path']
     config_path = options['config_path']
@@ -61,10 +65,6 @@ def intialize_session_state():
         st.session_state.annotation = Annotation()
     if 'cache' not in st.session_state:
         st.session_state.cache = ImageCache()
-    if 'errors' not in st.session_state:
-        st.session_state.errors = []
-    if 'messages' not in st.session_state:
-        st.session_state.messages = []
 
 def session_options():
     options = {}
@@ -144,7 +144,7 @@ def sidebar_display_dev_controls():
     st.sidebar.header('Developer goodies', divider=True)
     options = ['Show session_state', 'Show config settings', 'Show log',
                'Show objects pool', 'Show predicate specifications',
-               'Show property specifications', 'Show image cache']
+               'Show property specifications', 'Show image cache', 'Show annotations']
     dev_option = st.sidebar.radio('dev_opt', options, label_visibility='collapsed')
     return dev_option
 
@@ -269,36 +269,54 @@ def display_tier():
     return st.selectbox(
         'select-tier', [None] + config.TIERS, label_visibility='collapsed')
 
-def display_inputs(predicate: str, inputs: list):
+def display_arguments(predicate: str, inputs: list, conjunct=False):
     # The inputs argument is a list of dictionaries, where each dictionary
     # contains the specification for an argument or property.
-    inputs_dict = {}
-    if predicate is not None:
-        descriptions = [util.input_signature(d) for d in inputs]
-        d = f'{predicate} ( {", ".join(descriptions)})'
-        st.info(d)
+    args = {}
+    descriptions = [util.input_signature(d) for d in inputs]
+    d = f'{predicate} ( {", ".join(descriptions)})'
+    st.info(d)
     if inputs:
-        args = [''] * len(inputs)
-        for i, arg in enumerate(inputs):
-            type = arg['type']
-            label = arg['label']
-            items = arg['items']
-            st.write(label)
-            args[i] = [None] * len(items)
-            cols = st.columns(len(items))
-            for j, item in enumerate(items):
-                if item == 'TEXT':
-                    with cols[j]:
-                        args[i][j] = text(f'{i}:{j}-{type}')
-                elif isinstance(item, str):
-                    with cols[j]:
-                        args[i][j] = text(f'{i}:{j}-{type}', item)
-                elif isinstance(item, list):
-                    item = util.import_session_objects(item)
-                    with cols[j]:
-                        args[i][j] = box(f'{i}:{j}-{type}', item)
-            inputs_dict[type] = args[i]
-    return inputs_dict
+        display_inputs_helper(inputs, args, conjunct)
+    return args
+
+def display_properties(inputs: list):
+    # The inputs argument is a list of dictionaries, where each dictionary
+    # contains the specification for a property.
+    props = {}
+    descriptions = [util.input_signature(d) for d in inputs]
+    d = f'{", ".join(descriptions)})'
+    if inputs:
+        display_inputs_helper(inputs, props)
+    return props
+
+def display_inputs_helper(inputs: list, inputs_dict: dict, conjunct=False):
+    """This is a helper for both the display_arguments() and display_properties()
+    functions, it prints th einput fields and collects the settings in the input
+    dictionary."""
+    # TODO: this may break when a property name is the same as an argument name so
+    # may need to do something better to make sure that keys are unique.
+    prefix = 'c-' if conjunct else ''
+    args = [''] * len(inputs)
+    for i, arg in enumerate(inputs):
+        atype = arg['type']
+        label = arg['label']
+        items = arg['items']
+        st.write(label)
+        args[i] = [None] * len(items)
+        cols = st.columns(len(items))
+        for j, item in enumerate(items):
+            if item == 'TEXT':
+                with cols[j]:
+                    args[i][j] = text(f'{prefix}{i}:{j}-{atype}')
+            elif isinstance(item, str):
+                with cols[j]:
+                    args[i][j] = text(f'{prefix}{i}:{j}-{atype}', item)
+            elif isinstance(item, list):
+                item = util.import_session_objects(item)
+                with cols[j]:
+                    args[i][j] = box(f'{prefix}{i}:{j}-{atype}', item)
+        inputs_dict[atype] = args[i]
 
 def display_annotation(annotation, show_options: dict):
     st.markdown('###### Current values')
@@ -330,6 +348,7 @@ def display_annotations_timeline(annotations: list):
             return None
         annotation = Annotation.from_dictionary(anno)
         st.code(annotation.as_yaml(), language='yaml')
+        #st.json(annotation.as_json())
         offsets = list(range(annotation.start, annotation.end, 500))
         frames = collect_frames(st.session_state.video, offsets[:10])
         display_frames(st, frames, cols=10)
@@ -352,14 +371,17 @@ def display_annotations_timeline(annotations: list):
         with st.container(border=True):
             st.text('Selected annotation')
             annotation_pp(selected_item['annotation'])
-            start = int(selected_item['annotation']['start'] / 1000) - 1
+            start = max(int(selected_item['annotation']['start'] / 1000) - 1, 0)
             end = int(selected_item['annotation']['end'] / 1000) + 1
             play = st.button(f"Play annotation")
             if play:
-                st.button(f"Stop playing")
-                display_video(
-                    st.session_state.video, 50, start_time=start, end_time=end,
-                    loop=True, autoplay=True)
+                try:
+                    display_video(
+                        st.session_state.video, 50, start_time=start, end_time=end,
+                        loop=True, autoplay=True)
+                    st.button(f"Stop playing")
+                except Exception as e:
+                    st.warning(f'Error playing video: {e}')
 
 def get_chunks(items: list, n: int):
     return [items[i:i + n] for i in range(0, len(items), n)]

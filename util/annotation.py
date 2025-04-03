@@ -2,6 +2,7 @@ import os
 import json
 import pathlib
 import functools
+from abc import ABC
 from copy import deepcopy
 
 import streamlit as st
@@ -17,8 +18,7 @@ def load_annotations():
         pathlib.Path(filename).touch()
     video_path = st.session_state.video.path
     with open(filename) as fh:
-        annotations = []
-        removed_annotations = []
+        annotations = {}
         for json_object in [json.loads(line) for line in fh]:
             try:
                 if 'add-object' in json_object:
@@ -28,15 +28,16 @@ def load_annotations():
                     obj_type, obj = json_object['remove-object'][:2]
                     st.session_state.pool.remove_object_from_play(obj_type, obj)
                 elif 'remove-annotation' in json_object:
-                    removed_annotations.append(json_object['remove-annotation'])
+                    identifier = json_object['remove-annotation']
+                    if identifier in annotations:
+                        del(annotations[identifier])
                 else:
                     annotation = Annotation.from_dictionary(json_object)
-                    annotations.append(annotation)
+                    annotations[annotation.identifier] = annotation
             except Exception as e:
                 st.session_state.errors.append(f'Error loading {json_object}')
                 util.error(f'Error loading {json_object}', body=str(e))
-        annotations = [a for a in annotations if a.identifier not in removed_annotations]
-        st.session_state.annotations = annotations
+        st.session_state.annotations = list(annotations.values())
         util.log(f'Loaded annotations from {filename}')
 
 
@@ -188,6 +189,15 @@ class Annotation:
             return None
         return self.timeframe.end.in_milliseconds()
 
+    def set_predicate(self, predicate1, args1):
+        self._formula = Predicate(predicate1, args1)
+
+    def set_lf(self, predicate1, args1, predicate2, args2):
+        # failed in making this a property, so doing it the old-fashioned way
+        conjunct1 = Predicate(predicate1, args1)
+        conjunct2 = Predicate(predicate2, args2)
+        self._formula = Conjunction([conjunct1, conjunct2])
+
     @property
     def formula(self):
         if self._formula is None:
@@ -229,14 +239,20 @@ class Annotation:
         annotation.task = annotation_data.get('task')
         annotation.tier = annotation_data.get('tier')
         annotation.properties = annotation_data['properties']
-        # TODO: this is pretty ugly, should make sure the first is not needed
+        # TODO: this is pretty ugly, should find a better way
         if 'predicate' in annotation_data:
             pred = annotation_data['predicate']
             args = annotation_data['arguments']
-        else:
+            annotation.formula = Predicate(pred, args)
+        elif 'predicate' in annotation_data['formula']:
             pred = annotation_data['formula']['predicate']
             args = annotation_data['formula']['arguments']
-        annotation.formula = Predicate(pred, args)
+            annotation.formula = Predicate(pred, args)
+        else:
+            # TODO: generalize this
+            conjuncts = annotation_data['formula']['AND']
+            preds = [Predicate(c['predicate'], c['arguments']) for c in conjuncts]
+            annotation.formula = Conjunction(predicates=preds)
         tp1 = TimePoint(milliseconds=annotation_data['start'])
         tp2 = TimePoint(milliseconds=annotation_data['end'])
         annotation.timeframe = TimeFrame(start=tp1, end=tp2)
@@ -268,7 +284,7 @@ class Annotation:
         self.errors = []
         self.check_task_and_tier()
         self.check_start_and_end()
-        self.check_predicate_and_arguments()
+        self.check_predicate()
         self.check_properties()
         return True if not self.errors else False
 
@@ -291,19 +307,10 @@ class Annotation:
                 self.errors.append(
                     'WARNING: the start of the interval cannot be before the end')
 
-    def check_predicate_and_arguments(self):
-        """ Check the predicate and its arguments, add the the erros list
-        if any errors were found."""
-        if self.predicate is None:
-            self.errors.append(f'WARNING: the predicate is not specified')
-        if self.predicate:
-            argument_specifications = config.PREDICATES.get(self.predicate, {})
-            arguments_idx = { a['type']: a for a in argument_specifications }
-            for arg_name, arg_value in self.arguments.items():
-                optional = arguments_idx[arg_name].get('optional', False)
-                if not arg_value and not optional:
-                    self.errors.append(
-                        f'WARNING: required argument "{arg_name}" is not specified')
+    def check_predicate(self):
+        """ Check the predicate and its arguments, add to the errors list
+        if any errors were found. Will be handled by the formula object."""
+        self.formula.check(self.errors)
 
     def check_properties(self):
         """Check the properties dictionary of the annotation, add the the erros list
@@ -326,7 +333,7 @@ class Annotation:
         try:
             # TODO: this may be different for some tasks if we don't use
             # 'predicate' for that field
-            prefix = 'X' if self.predicate is None else self.predicate[0]
+            prefix = self.formula.prefix()
             tp = TimePoint(milliseconds=self.start)
             offset = f'{tp.mm()}{tp.ss()}'
             return f'{prefix}{offset}'
@@ -334,8 +341,7 @@ class Annotation:
             return None
 
     def as_formula(self):
-        formatted_args = ', '.join([f'{a}="{v}"' for a, v in self.arguments.items()])
-        return f'{str(self.predicate)}({formatted_args})'
+        return self.formula.as_formula()
 
     def as_json(self):
         return {
@@ -345,7 +351,7 @@ class Annotation:
             'name': self.name,
             'start': self.start,
             'end': self.end,
-            'formula': { 'predicate': self.predicate, 'arguments': self.arguments },
+            'formula': self.formula.as_json(),
             'properties': self.properties }
 
     def as_yaml(self):
@@ -432,15 +438,22 @@ class Annotation:
             with open(json_file, 'a') as fh:
                 fh.write(json.dumps(self.as_json()) + '\n')
             st.session_state.action_type = None
+            st.session_state.action_type2 = None
             util.log(f'Saved annotation {self.identifier} {self.as_formula()}')
         st.session_state.errors = self.errors
         st.session_state.opt_show_boundary = False
+        st.session_state.opt_conjunction = False
         st.session_state.annotation = Annotation()
         for error in self.errors:
             util.log(error)
 
 
-class Predicate:
+class LogicalForm(ABC):
+
+    pass
+
+
+class Predicate(LogicalForm):
 
     def __init__(self, name: str, arguments: dict):
         self.name = name
@@ -449,5 +462,55 @@ class Predicate:
     def __str__(self):
         return f'<Predicate "{self.name}" with {len(self.arguments)} arguments>'
 
+    def prefix(self):
+        return 'X' if not self.name else self.name[0]
+
+    def as_formula(self):
+        formatted_args = ', '.join([f'{a}="{v}"' for a, v in self.arguments.items()])
+        return f'{str(self.name)}({formatted_args})'
+
+    def as_json(self):
+        return { 'predicate': self.name, 'arguments': self.arguments }
+
+    def check(self, warnings):
+        """ Check the predicate and its arguments, add to the warnings list
+        if any problems were found."""
+        if self.name is None:
+            warnings.append(f'WARNING: the predicate is not specified')
+        if self.name:
+            argument_specifications = config.PREDICATES.get(self.name, {})
+            arguments_idx = { a['type']: a for a in argument_specifications }
+            for arg_name, arg_value in self.arguments.items():
+                optional = arguments_idx[arg_name].get('optional', False)
+                if not arg_value and not optional:
+                    warnings.append(
+                        f'WARNING: required argument "{arg_name}" is not specified')
+
     def copy(self):
         return Predicate(self.name, deepcopy(self.arguments))
+
+
+class Conjunction(LogicalForm):
+
+    def __init__(self, predicates: list):
+        self.conjuncts = predicates
+
+    def __str__(self):
+        return f'<AND {" ".join([str(pred) for pred in self.conjuncts])}>'
+
+    def prefix(self):
+        return 'A'
+
+    def as_formula(self):
+        return f'AND( {", ".join(c.as_formula() for c in self.conjuncts)} )'
+
+    def as_json(self):
+        return { 'AND': [c.as_json() for c in self.conjuncts] }
+
+    def check(self, warnings):
+        for conjunct in self.conjuncts:
+            conjunct.check(warnings)
+
+    def copy(self):
+        return Conjunction(predicates=[p.copy() for p in self.conjuncts])
+
