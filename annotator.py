@@ -12,10 +12,6 @@ $ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
 """
 
 
-import io
-import json
-import time
-
 import streamlit as st
 
 from config import default as config
@@ -49,16 +45,6 @@ if mode == 'dev':
         'Clear image cache', on_click=stutil.action_clear_image_cache)
 
 
-def read_config_file(filename: str):
-    # do not use this till it does a decent job of parsing the config file
-    stream = io.StringIO()
-    with open(filename) as fh:
-        for line in fh:
-            if not line.strip().startswith('#'):
-                stream.write(line)
-        return stream.getvalue()
-
-
 # MAIN CONTENT
 
 if mode == 'add annotations':
@@ -87,32 +73,43 @@ if mode == 'add annotations':
 
     # The box with the predicate and the argument structure
     with st.container(border=True):
-        predicate = stutil.display_predicate_selector(st)
-        #predicate_description = util.PredicateDescription(predicate)
-        #predicate_description.pp()
-        arguments = config.PREDICATES.get(predicate, [])
-        args = stutil.display_inputs(predicate, arguments)
-        args = util.process_arguments(args)
+        args1 = None
+        args2 = None
+        use_conjunction = st.checkbox('Use Conjunction', key='opt_conjunction')
+        predicate1 = stutil.display_predicate_selector(st)
+        # util.PredicateDescription(predicate).pp()
+        arguments1 = config.PREDICATES.get(predicate1, [])
+        args1 = stutil.display_arguments(predicate1, arguments1)
+        args1 = util.process_arguments(args1)
+        if use_conjunction:
+            st.divider()
+            predicate2 = stutil.display_predicate_selector(st, key='action_type_2')
+            # util.PredicateDescription(predicate).pp()
+            arguments2 = config.PREDICATES.get(predicate2, [])
+            args2 = stutil.display_arguments(predicate2, arguments2, True)
+            args2 = util.process_arguments(args2)
 
     # The boxes with the tier and the properties, if relevant. Don't show them
     # until after predicate selection, which structures the annotation but also
     # solved an issue with refreshing the properties after an annotation was saved.
     selected_tier = None
-    if predicate:
+    if predicate1:
         if config.TIER_IS_DEFINED_BY_USER:
             with st.container(border=True):
                 selected_tier = stutil.display_tier()
         with st.container(border=True):
             properties = config.PROPERTIES
-            props = stutil.display_inputs(None, properties)
+            props = stutil.display_properties(properties)
             props = util.process_arguments(props)
     else:
         props = {}
 
     # Now that we have our values we can update the annotation
     annotation = st.session_state.annotation
-    annotation.predicate = predicate
-    annotation.arguments = args
+    if not use_conjunction:
+        annotation.set_predicate(predicate1, args1)
+    else:
+        annotation.set_lf(predicate1, args1, predicate2, args2)
     annotation.properties = props
     annotation.calculate_tier(tf, selected_tier)
 
@@ -256,4 +253,29 @@ if mode == 'dev':
     elif dev == 'Show image cache':
         with st.container(border=True):
             st.markdown('**Image cash**')
-            st.write(' '.join(str(tp) for tp in sorted(st.session_state.cache.data)))
+            timepoints = [str(tp) for tp in sorted(st.session_state.cache.data)]
+            tp = st.pills('imagecash-timepoint', timepoints, label_visibility='collapsed')
+            if tp is not None:
+                st.image(st.session_state.cache[int(tp)], channels='BGR')
+    elif dev == 'Show annotations':
+        with st.container(border=True):
+            st.markdown('**Annotations**')
+            annotations = st.session_state.annotations
+            name_index = {a.name: a for a in annotations}
+            id_index = {a.identifier: a for a in annotations}
+            name_choice = st.radio(
+                'dev-radio', ['by identifier', 'by name'],
+                horizontal=True, label_visibility='collapsed')
+            if name_choice == 'by name':
+                annos = [anno.name for anno in sorted(annotations)]
+            else:
+                annos = sorted([anno.identifier for anno in annotations])
+            id_or_name = st.pills('dev-annotations', annos, label_visibility='collapsed')
+            if id_or_name is not None:
+                if name_choice == 'by name':
+                    selected = name_index.get(id_or_name)
+                else:
+                    selected = id_index.get(id_or_name)
+                st.write(selected)
+                st.code(selected.as_yaml(), language='yaml')
+                st.write(selected.as_json())

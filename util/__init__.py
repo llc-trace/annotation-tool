@@ -174,6 +174,3 @@ class FieldDescription:
     def signature(self):
         optionality_marker = '?' if self.optional else ''
         return f'{self.type}{optionality_marker}'
-
-
-'EOF'

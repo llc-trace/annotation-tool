@@ -5,11 +5,13 @@ All notable changes to this project are documented in this file.
 This project uses a simple versioning scheme with major and minor versions. Major versions are for significant updates with more than minimal functionality changes. Minor versions are for small functionality changes, documentation updates, small fixes and patches, and under-the-hood changes.
 
 
-## Version X.X
+## Version 4.0 - 2025-04-XX
 
 - Revamped list of annoations
 - Added timeline slider to select window in video
 - Changed display of annotation list controls
+- Added conjunctions as a first step to more complete logical forms
+- Updated the interface to allow limited conjunctions
 
 
 ## Version 3.0 — 2025-03-17

@@ -271,6 +271,3 @@ def collect_frames(video, frame_offsets: list):
     fc = FrameCollector(video, st.session_state.cache)
     frames = asyncio.run(fc.get_frames(frame_offsets))
     return frames
-
-
-'EOF'
