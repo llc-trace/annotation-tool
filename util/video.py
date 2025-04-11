@@ -33,14 +33,6 @@ class TimePoint:
         return cls(
             hours=t.hour, minutes=t.minute, seconds=t.second, milliseconds=ms)
 
-    @classmethod
-    def from_updated_timepoint(cls, timepoint: 'TimePoint', milliseconds: int):
-        """Takes a TimePoint and returns a new one which is the same except that the
-        specified amount of milliseconds is added."""
-        # TODO: not currently used and probably deprecated
-        total = timepoint.in_milliseconds() + int(milliseconds)
-        return cls(milliseconds=total)
-
     def __init__(self, hours=0, minutes=0, seconds=0, milliseconds=0):
         # if hours < 0 or minutes < 0 or seconds < 0 or milliseconds < 0:
         #    raise ValueError('Values need to be >= 0')
@@ -267,7 +259,6 @@ class FrameCollector:
 
 
 def collect_frames(video, frame_offsets: list):
-    # TODO: probably add this to the video class
     fc = FrameCollector(video, st.session_state.cache)
     frames = asyncio.run(fc.get_frames(frame_offsets))
     return frames

@@ -514,3 +514,51 @@ class Conjunction(LogicalForm):
     def copy(self):
         return Conjunction(predicates=[p.copy() for p in self.conjuncts])
 
+
+class Disjunction(LogicalForm):
+
+    def __init__(self, predicates: list):
+        self.disjuncts = predicates
+
+    def __str__(self):
+        return f'<OR {" ".join([str(pred) for pred in self.disjuncts])}>'
+
+    def prefix(self):
+        return 'D'
+
+    def as_formula(self):
+        return f'OR( {", ".join(c.as_formula() for c in self.disjuncts)} )'
+
+    def as_json(self):
+        return { 'OR': [c.as_json() for c in self.disjuncts] }
+
+    def check(self, warnings):
+        for disjunct in self.disjuncts:
+            disjunct.check(warnings)
+
+    def copy(self):
+        return Disjunction(predicates=[p.copy() for p in self.disjuncts])
+
+
+class Negation(LogicalForm):
+
+    def __init__(self, predicate):
+        self.predicate = predicate
+
+    def __str__(self):
+        return f'<NOT {self.predicate}>'
+
+    def prefix(self):
+        return 'N'
+
+    def as_formula(self):
+        return f'NOT( {self.predicate.as_formula()} )'
+
+    def as_json(self):
+        return { 'OR': self.predicate.as_json() }
+
+    def check(self, warnings):
+        self.predicate.check(warnings)
+
+    def copy(self):
+        return Negation(predicate=self.predicaste.copy())

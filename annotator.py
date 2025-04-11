@@ -7,10 +7,9 @@ Originally created for Action and Gesture annotation for the TRACE project.
 To run this:
 
 $ pip install -r requirements.txt
-$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG> [debug]
+$ streamlit run annotator.py <VIDEO_FILE> <TASK_CONFIG_FILE> [debug]
 
 """
-
 
 import streamlit as st
 
@@ -18,6 +17,7 @@ from config import default as config
 import util
 import util.streamlit as stutil
 from util.video import TimePoint, TimeFrame
+from util import components, actions
 
 
 st.set_page_config(page_title=config.TITLE, layout="wide")
@@ -36,13 +36,14 @@ mode = stutil.sidebar_display_tool_mode()
 if 'annotation' in mode:
     offset, width = stutil.sidebar_display_video_controls()
 if mode == 'add annotations':
-    add_settings = stutil.sidebar_display_annotation_controls()
+    add_annotation_settings = stutil.sidebar_display_annotation_controls()
 if mode == 'show annotations':
-    list_settings = stutil.sidebar_display_annotation_list_controls()
+    show_annotations_settings = stutil.sidebar_display_annotation_list_controls()
 if mode == 'dev':
     dev = stutil.sidebar_display_dev_controls()
+    st.write(dev)
     clear_cache = st.sidebar.button(
-        'Clear image cache', on_click=stutil.action_clear_image_cache)
+        'Clear image cache', on_click=actions.clear_image_cache)
 
 
 # MAIN CONTENT
@@ -53,37 +54,25 @@ if mode == 'add annotations':
     st.info(f'**{video.filename}**')
     stutil.display_video(video, width, start_time=offset.in_seconds())
 
-    # The box with timeframe settings
-    with st.container(border=True):
-        tf = stutil.display_capture_boundaries()
-        if not add_settings['hide_boundaries']:
-            stutil.display_left_boundary(tf)
-            stutil.display_right_boundary(tf)
+    # The box with timeframe selection widgets
+    tf = components.timeframe_selector(add_annotation_settings)
 
     # A button to loop the video for the currently selected timeframe
-    if len(st.session_state.annotation.timeframe) > 0:
-        start = max(0, st.session_state.annotation.timeframe.start.in_seconds() - 1)
-        end = st.session_state.annotation.timeframe.end.in_seconds() + 1
-        play = st.button(f"Loop video from {start} to {end}")
-        if play:
-            st.button(f"Stop loop")
-            stutil.display_video(
-                video, width, start_time=start, end_time=end,
-                loop=True, autoplay=True)
+    components.timeframe_loop(video, width, st.session_state.annotation)
 
     # The box with the predicate and the argument structure
     with st.container(border=True):
         args1 = None
         args2 = None
         use_conjunction = st.checkbox('Use Conjunction', key='opt_conjunction')
-        predicate1 = stutil.display_predicate_selector(st)
+        predicate1 = components.predicate_selector(key='predicate_type_1')
         # util.PredicateDescription(predicate).pp()
         arguments1 = config.PREDICATES.get(predicate1, [])
         args1 = stutil.display_arguments(predicate1, arguments1)
         args1 = util.process_arguments(args1)
         if use_conjunction:
             st.divider()
-            predicate2 = stutil.display_predicate_selector(st, key='action_type_2')
+            predicate2 = components.predicate_selector(key='predicate_type_2')
             # util.PredicateDescription(predicate).pp()
             arguments2 = config.PREDICATES.get(predicate2, [])
             args2 = stutil.display_arguments(predicate2, arguments2, True)
@@ -115,7 +104,7 @@ if mode == 'add annotations':
 
     # Display the updated annotation with a save button or a warning
     with st.container(border=True):
-        stutil.display_annotation(annotation, add_settings)
+        stutil.display_annotation(annotation, add_annotation_settings)
     if annotation.is_valid():
         st.button("Save Annotation", on_click=annotation.save)
     else:
@@ -133,7 +122,7 @@ if mode == 'show annotations':
 
     st.title('Annotations')
     st.info(f'**{video.filename}**')
-    if not list_settings['hide-video']:
+    if not show_annotations_settings['hide-video']:
         stutil.display_video(video, width, start_time=offset.in_seconds())
     fname = st.session_state.io['json']
 
@@ -150,7 +139,7 @@ if mode == 'show annotations':
             annotation_id = stutil.display_remove_annotation_select()
             st.button(
                 'Remove',
-                on_click=stutil.action_remove_annotation,
+                on_click=actions.remove_annotation,
                 args=[annotation_id])
         elif action.startswith('Reload'):
             util.annotation.load_annotations()
@@ -164,7 +153,7 @@ if mode == 'show annotations':
             st.info(f'Annotations were exported to {st.session_state.io["elan"]}')
 
     stutil.display_messages()
-    stutil.display_annotations(list_settings)
+    stutil.display_annotations(show_annotations_settings)
 
 
 if mode == 'show object pool':
@@ -189,7 +178,7 @@ if mode == 'show object pool':
                 c1, c2, _ = st.columns([4, 2, 6])
                 selected = c1.multiselect(label, available, label_visibility='collapsed')
                 c2.button(f"Add {obj_type}",
-                          on_click=stutil.action_add_objects,
+                          on_click=actions.add_objects,
                           args=[obj_type, selected])
                 label = f'Stop using {object_types[i]} and put them back in the pool'
                 st.write(label)
@@ -197,7 +186,7 @@ if mode == 'show object pool':
                 selected = c3.multiselect(label, inplay, label_visibility='collapsed')
                 c4.button(
                     f"Remove {obj_type}",
-                    on_click=stutil.action_remove_objects,
+                    on_click=actions.remove_objects,
                     args=[obj_type, selected])
                 stutil.display_messages()
                 stutil.display_available_objects(obj_type)
@@ -205,9 +194,9 @@ if mode == 'show object pool':
         st.text('The Object Pool is not used for this task.')
 
     # blocks_to_add = stutil.display_add_block_select(c1)
-    # c2.button("Add", on_click=stutil.action_add_blocks, args=[blocks_to_add])
+    # c2.button("Add", on_click=actions.add_blocks, args=[blocks_to_add])
     # block_to_remove = stutil.display_remove_block_select(c3)
-    # c4.button("Remove", on_click=stutil.action_remove_block, args=[block_to_remove])
+    # c4.button("Remove", on_click=actions.remove_block, args=[block_to_remove])
 
 
 if mode == 'help':

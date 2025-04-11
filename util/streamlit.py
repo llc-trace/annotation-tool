@@ -23,6 +23,7 @@ from util.video import Video, TimePoint, TimeFrame, collect_frames
 from util.annotation import Annotation, ObjectPool
 from util.annotation import annotation_identifiers, load_annotations
 from util.cache import ImageCache
+from util import actions, components
 
 
 # Session state utilities
@@ -163,62 +164,10 @@ def display_timeframe_slider():
                        value=(video.start, video.end),
                        max_value=video.end,
                        step=datetime.timedelta(seconds=1),
-                       on_change=action_change_timeframe,
+                       on_change=actions.change_timeframe,
                        format=config.SLIDER_TIME_FORMAT,
                        label_visibility='collapsed')
     return slider
-
-def display_capture_boundaries():
-    st.markdown('**Select start and end in hh:mm:ss:mmm**')
-    keys1 = ['start_hh', 'start_mm', 'start_ss', 'start_mmm']
-    keys2 = ['end_hh', 'end_mm', 'end_ss', 'end_mmm']
-    col1, col2 = st.columns(2)
-    with col1:
-        tp1 = display_seek_inputs('Start', keys=keys1)
-        st.write(tp1)
-    with col2:
-        tp2 = display_seek_inputs('End', keys=keys2)
-        st.write(tp2)
-    # Trap out of bounds errors
-    video_length = len(st.session_state.video)
-    if tp2.in_seconds() > video_length:
-        end = st.session_state.video.get_video_end()
-        tp2 = TimePoint.from_time(end)
-        st.warning(
-            'Warning: out-of-bounds error for the endpoint, '
-            f'using "{tp2.timestamp(short=True)}" instead')
-    tf = TimeFrame(start=tp1, end=tp2, video=st.session_state.video)
-    st.session_state.annotation.timeframe = tf
-    return tf
-
-def display_seek_inputs(header: str, keys: list):
-    # TODO: this is similar to sidebar_display_seek_inputs(), those two should
-    # be combined
-    def get_number(column, label: str, key: str):
-        return column.number_input(
-            label, key=key, min_value=0, label_visibility="collapsed")
-    col0, col1, col2, col3, col4, _ = st.columns([3, 4, 4, 4, 4, 6])
-    col0.markdown(header)
-    hours = get_number(col1, 'hh', keys[0])
-    minutes = get_number(col2, 'ss', keys[1])
-    seconds = get_number(col3, 'mm', keys[2])
-    mseconds = get_number(col4, 'mmm', keys[3])
-    return TimePoint(
-        hours=hours, minutes=minutes, seconds=seconds, milliseconds=mseconds)
-
-def display_left_boundary(timeframe: 'TimeFrame'):
-    #st.write('**Showing left boundary**')
-    ms = timeframe.start.in_milliseconds()
-    timepoint = TimePoint(milliseconds=ms)
-    frames = collect_frames(timeframe.video, util.get_window(ms))
-    display_sliding_window(st, frames, timepoint)
-
-def display_right_boundary(timeframe: 'TimeFrame'):
-    #st.write('**Showing right boundary**')
-    ms = timeframe.end.in_milliseconds()
-    timepoint = TimePoint(milliseconds=ms)
-    frames = collect_frames(timeframe.video, util.get_window(ms))
-    display_sliding_window(st, frames, timepoint)
 
 def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
     step = datetime.timedelta(milliseconds=config.CONTEXT_STEP)
@@ -230,39 +179,6 @@ def display_timepoint_tuner(label: str, tf: 'TimeFrame', tp: 'TimePoint'):
             util.create_label(label), d - margin, d + margin,
             value=d, format=config.SLIDER_TIME_FORMAT, step=step)
         return val
-
-def display_sliding_window(column, frames, tp, header=None):
-    """Display frames horizontally in a box."""
-    with column.container(border=False):
-        if header is not None:
-            column.write(header)
-        cols = column.columns(len(frames))
-        for i, frame in enumerate(frames):
-            is_focus = False
-            if tp.in_milliseconds() == frame.timepoint.in_milliseconds():
-                is_focus = True
-            display_frame(cols[i], frame, focus=is_focus)
-
-def display_frames(column, frames, cols=10, header=None):
-    """Display frames horizontally in a box."""
-    box = column.container(border=True)
-    if header is not None:
-        box.write(header)
-    cols = box.columns(cols)
-    for i, frame in enumerate(frames):
-        display_frame(cols[i], frame)
-
-def display_frame(column, frame, focus=False):
-    caption = f'✔︎' if focus else frame.caption()
-    if frame.success:
-        column.image(frame.image, channels="BGR", caption=caption)
-    # TODO: on failure may want to pass in an empty image with a caption like
-    # below, but before that need to figure out how to control the size of the
-    # image better (that is make it match the video screen dimensions).
-    # svg = (
-    #     '<svg width="100" height="75" xmlns="http://www.w3.org/2000/svg">'
-    #     '<rect width="100" height="75" /></svg>')
-    # column.image(svg, caption=caption)
 
 def display_tier():
     st.write('**Tier**')
@@ -342,6 +258,7 @@ def display_annotations(settings: dict):
         with st.container(border=True):
             display_annotations_table(sorted(filtered_annotations))
 
+# TODO: this needs to move to components
 def display_annotations_timeline(annotations: list):
     def annotation_pp(anno: dict):
         if anno is None:
@@ -351,7 +268,7 @@ def display_annotations_timeline(annotations: list):
         #st.json(annotation.as_json())
         offsets = list(range(annotation.start, annotation.end, 500))
         frames = collect_frames(st.session_state.video, offsets[:10])
-        display_frames(st, frames, cols=10)
+        components.video_frames_from_list(frames)
     tiers = sorted(set([a.tier for a in annotations if a.tier]))
     groups = [{"id": tier, "content": tier.lower()} for tier in tiers]
     # Arrived at these numbers experimentally, the height of a tier is 1.3 cm on the
@@ -417,68 +334,5 @@ def display_available_objects(obj_type: str):
     with st.container(border=True):
         st.text('\n'.join(objs))
 
-def display_predicate_selector(column, key='action_type'):
-    label = util.create_label('Select predicate')
-    return st.pills(label, config.PREDICATES.keys(), key=key)
-
 def display_remove_annotation_select():
     return st.selectbox('Remove annotation', [None] + annotation_identifiers())
-
-
-# Actions
-# ----------------------------------------------------------------------------
-
-def action_clear_image_cache():
-    st.session_state.cache.reset()
-
-def action_change_timeframe():
-    t1, t2 = st.session_state.opt_timeframe
-    if st.session_state.annotation.timeframe is None:
-        st.session_state.annotation.timeframe = TimeFrame()
-    st.session_state.annotation.timeframe.start = TimePoint.from_time(t1)
-    st.session_state.annotation.timeframe.end = TimePoint.from_time(t2)
-
-def action_add_objects(object_type: str, objects: list):
-    """Put the objects in the list in play, that is, move them from the 'available'
-    bin to the 'inplay' bin. After this, they will be available as options."""
-    st.session_state.pool.put_objects_in_play(object_type, objects)
-    with open(st.session_state.io['json'], 'a') as fh:
-        for obj in objects:
-            fh.write(json.dumps({"add-object": (object_type, obj)}) + '\n')
-            message = f'Added {obj} and removed it from the pool'
-            st.session_state.messages.append(message)
-            util.log(message)
-
-def action_remove_objects(object_type: str, objects: list):
-    """Remove the objects in the list from play, that is, move them from the 'inplay'
-    bin to the 'available' bin. After this, they won't be available as options."""
-    st.session_state.pool.remove_objects_from_play(object_type, objects)
-    with open(st.session_state.io['json'], 'a') as fh:
-        for obj in objects:
-            fh.write(json.dumps({"remove-object": (object_type, obj)}) + '\n')
-            message = f'Removed {obj} and returned it to the pool'
-            st.session_state.messages.append(message)
-            util.log(message)
-
-def action_remove_annotation(annotation_id: str):
-    if annotation_id is not None:
-        with open(st.session_state.io['json'], 'a') as fh:
-            fh.write(json.dumps({"remove-annotation": annotation_id}) + '\n')
-        remove_annotation(annotation_id)
-        message = f"Removed  annotation {annotation_id}"
-        st.session_state.messages.append(message)
-        util.log(message)
-
-def action_save_starting_time(timepoint: 'TimePoint'):
-    st.session_state.annotation.timeframe.start = timepoint
-    st.session_state.opt_tune_start = False
-    util.log(f'Saved starting time {timepoint}')
-
-def action_save_ending_time(timepoint: 'TimePoint'):
-    st.session_state.annotation.timeframe.end = timepoint
-    st.session_state.opt_tune_end = False
-    util.log(f'Saved ending time {timepoint}')
-
-def remove_annotation(annotation_id: str):
-    st.session_state.annotations = \
-        [a for a in st.session_state.annotations if a.identifier != annotation_id]

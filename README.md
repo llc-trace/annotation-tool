@@ -21,7 +21,7 @@ When using the requirements file you need at least Python 3.10. With individual 
 To start the tool do
 
 ```shell
-streamlit run dpip_action_annotator.py LOCAL_PATH/VIDEO_FILE.mp4 CONFIG_FILE
+streamlit run annotator.py LOCAL_PATH/VIDEO_FILE.mp4 CONFIG_FILE
 ```
 
 For the manual see [docs/manual/index.md](docs/manual/index.md).
